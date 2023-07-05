@@ -1,0 +1,18 @@
+include MANIFEST.in
+include requirements.txt
+include *.json
+include *.md
+include *.py
+include *.txt
+recursive-include frappe_zk_integration_app *.css
+recursive-include frappe_zk_integration_app *.csv
+recursive-include frappe_zk_integration_app *.html
+recursive-include frappe_zk_integration_app *.ico
+recursive-include frappe_zk_integration_app *.js
+recursive-include frappe_zk_integration_app *.json
+recursive-include frappe_zk_integration_app *.md
+recursive-include frappe_zk_integration_app *.png
+recursive-include frappe_zk_integration_app *.py
+recursive-include frappe_zk_integration_app *.svg
+recursive-include frappe_zk_integration_app *.txt
+recursive-exclude frappe_zk_integration_app *.pyc
