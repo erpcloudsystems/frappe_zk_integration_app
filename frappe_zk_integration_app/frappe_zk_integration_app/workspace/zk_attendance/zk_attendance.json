@@ -17,7 +17,7 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "ZK Managment",
+   "label": "ZK Management",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
@@ -62,7 +62,7 @@
  ],
  "modified": "2023-07-13 12:27:33.664433",
  "modified_by": "Administrator",
- "module": "Frappe Zk Integration App",
+ "module": "Frappe ZK Integration App",
  "name": "ZK Attendance",
  "onboarding": "",
  "owner": "Administrator",
