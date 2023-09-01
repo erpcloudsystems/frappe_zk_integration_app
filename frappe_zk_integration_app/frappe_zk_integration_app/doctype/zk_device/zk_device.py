@@ -62,7 +62,7 @@ class ZKDevice(Document):
 							(name, employee, enroll_no, time, date, type, punch, creation, modified, owner, device)
 						VALUES
 							('{}', (SELECT name FROM tabEmployee WHERE attendance_device_id = '{}' LIMIT 1),
-							'{}', '{}', '{}', '{}', '{}', CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), '{}', '{}')
+							'{}', '{}', '{}', '{}', '{}', NOW(), NOW(), '{}', '{}')
 					""".format(
                         name,
                         log.user_id,
@@ -133,3 +133,4 @@ def get_active_device_logs(names=None):
             doc.get_device_log()
         except Exception as e:
             frappe.msgprint(_("Process terminate : {}".format(e)), indicator="red")
+
