@@ -102,17 +102,19 @@ class ZKDevice(Document):
 
 @frappe.whitelist()
 def sync_employee():
-    frappe.db.sql(
-        """
-			UPDATE `tabDevice Log` log
-			SET log.employee = (
-				SELECT name FROM tabEmployee WHERE attendance_device_id = log.enroll_no LIMIT 1
-			)
-		"""
-    )
-    frappe.db.commit()
-    frappe.msgprint(_("Done"))
-
+    try:
+        frappe.db.sql(
+            """
+                UPDATE `tabDevice Log` log
+                SET log.employee = (
+                    SELECT name FROM tabEmployee WHERE attendance_device_id = log.enroll_no LIMIT 1
+                )
+            """
+        )
+        frappe.db.commit()
+        frappe.msgprint(_("Done"))
+    except:
+        pass
 
 @frappe.whitelist()
 def get_active_device_logs(names=None):
