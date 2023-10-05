@@ -1,128 +1,134 @@
 {
-    "actions": [],
-    "autoname": "Prompt",
-    "creation": "2021-04-01 23:35:05.088429",
-    "doctype": "DocType",
-    "editable_grid": 1,
-    "engine": "InnoDB",
-    "field_order": [
-        "employee",
-        "enroll_no",
-        "time",
-        "date",
-        "type",
-        "punch",
-        "device"
-    ],
-    "fields": [
-        {
-            "fieldname": "employee",
-            "fieldtype": "Link",
-            "in_filter": 1,
-            "in_list_view": 1,
-            "in_standard_filter": 1,
-            "label": "Employee",
-            "options": "Employee"
-        },
-        {
-            "fieldname": "enroll_no",
-            "fieldtype": "Int",
-            "label": "Enroll No",
-            "read_only": 1
-        },
-        {
-            "fieldname": "time",
-            "fieldtype": "Datetime",
-            "in_filter": 1,
-            "in_list_view": 1,
-            "in_standard_filter": 1,
-            "label": "Time",
-            "read_only": 1
-        },
-        {
-            "fieldname": "date",
-            "fieldtype": "Date",
-            "in_filter": 1,
-            "in_list_view": 1,
-            "in_standard_filter": 1,
-            "label": "Date",
-            "read_only": 1
-        },
-        {
-            "default": "IN",
-            "fieldname": "type",
-            "fieldtype": "Select",
-            "in_filter": 1,
-            "in_list_view": 1,
-            "in_standard_filter": 1,
-            "label": "Type",
-            "options": "IN\nOUT",
-            "read_only": 1
-        },
-        {
-            "fieldname": "punch",
-            "fieldtype": "Data",
-            "label": "Punch",
-            "read_only": 1
-        },
-        {
-            "fieldname": "device",
-            "fieldtype": "Link",
-            "in_filter": 1,
-            "in_list_view": 1,
-            "in_standard_filter": 1,
-            "label": "Device",
-            "options": "ZK Device",
-            "read_only": 1
-        }
-    ],
-    "index_web_pages_for_search": 1,
-    "links": [],
-    "modified": "2021-04-02 20:21:46.381798",
-    "modified_by": "Administrator",
-    "module": "Frappe ZK Integration App",
-    "name": "Device Log",
-    "owner": "Administrator",
-    "permissions": [
-        {
-            "create": 1,
-            "delete": 1,
-            "email": 1,
-            "export": 1,
-            "print": 1,
-            "read": 1,
-            "report": 1,
-            "role": "System Manager",
-            "share": 1,
-            "write": 1
-        },
-        {
-            "create": 1,
-            "delete": 1,
-            "email": 1,
-            "export": 1,
-            "print": 1,
-            "read": 1,
-            "report": 1,
-            "role": "HR Manager",
-            "share": 1,
-            "write": 1
-        },
-        {
-            "create": 1,
-            "delete": 1,
-            "email": 1,
-            "export": 1,
-            "print": 1,
-            "read": 1,
-            "report": 1,
-            "role": "HR User",
-            "share": 1,
-            "write": 1
-        }
-    ],
-    "sort_field": "time",
-    "sort_order": "DESC",
-    "title_field": "enroll_no",
-    "track_changes": 1
+ "actions": [],
+ "autoname": "Prompt",
+ "creation": "2021-04-01 23:35:05.088429",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "employee",
+  "enroll_no",
+  "time",
+  "date",
+  "type",
+  "punch",
+  "device"
+ ],
+ "fields": [
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Employee",
+   "options": "Employee",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "enroll_no",
+   "fieldtype": "Int",
+   "label": "Enroll No",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "time",
+   "fieldtype": "Datetime",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Time",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Date",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "default": "IN",
+   "fieldname": "type",
+   "fieldtype": "Select",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Type",
+   "options": "IN\nOUT",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "punch",
+   "fieldtype": "Data",
+   "label": "Punch",
+   "read_only": 1
+  },
+  {
+   "fieldname": "device",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Device",
+   "options": "ZK Device",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2023-10-05 14:19:15.048667",
+ "modified_by": "Administrator",
+ "module": "Frappe Zk Integration App",
+ "name": "Device Log",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR User",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "time",
+ "sort_order": "DESC",
+ "title_field": "enroll_no",
+ "track_changes": 1
 }

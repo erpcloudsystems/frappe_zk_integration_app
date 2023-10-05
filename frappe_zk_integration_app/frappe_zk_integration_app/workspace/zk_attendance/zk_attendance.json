@@ -60,9 +60,9 @@
    "type": "Link"
   }
  ],
- "modified": "2023-07-13 12:27:33.664433",
+ "modified": "2023-10-05 16:12:05.498722",
  "modified_by": "Administrator",
- "module": "Frappe ZK Integration App",
+ "module": "Frappe Zk Integration App",
  "name": "ZK Attendance",
  "onboarding": "",
  "owner": "Administrator",
@@ -92,6 +92,12 @@
    "label": "Employee Checkin",
    "link_to": "Employee Checkin",
    "type": "DocType"
+  },
+  {
+   "doc_view": "",
+   "label": "Monthly Attendance",
+   "link_to": "Monthly Attendance",
+   "type": "Report"
   }
  ]
 }
