@@ -182,10 +182,32 @@ def get_attendance_for_day(employee_id, date_str, total_daily_hours):
     working_on_day_str = str(working_on_day)
     working_on_day_obj =  datetime.strptime(working_on_day_str, "%H:%M:%S")
     time_diff_wor_shift_daily = working_on_day_obj - total_shift_hours_obj
-    if in_time == "00:00:00" and out_time == "00:00:00":
+    on_leave = is_employee_on_leave(employee_id, date_str)
+    if on_leave:
+        working_on_day = "<span style='color: green;'>On Leave</span>"
+        time_diff_wor_shift_daily = "<span style='color: green;'>On Leave</span>"
+        in_time = "<span style='color: green;'>On Leave</span>"
+        out_time = "<span style='color: green;'>On Leave</span>"
+    elif in_time == "00:00:00" and out_time == "00:00:00":
         working_on_day = "<span style='color: red;'>Absent</span>"
         time_diff_wor_shift_daily = "<span style='color: red;'>Absent</span>"
+        in_time = "<span style='color: red;'>Absent</span>"
+        out_time = "<span style='color: red;'>Absent</span>"
 
     # Convert the timedelta to a string in the format HH:MM:SS
 
     return in_time, out_time, working_on_day, time_diff_wor_shift_daily
+
+def is_employee_on_leave(employee_id, date_str):
+    sql_query = """
+        SELECT name
+        FROM `tabLeave Application`
+        WHERE
+            employee = %(employee_id)s
+            AND %(date_str)s BETWEEN from_date AND to_date
+            AND status != 'Cancelled'
+    """
+
+    leave_application_exists = frappe.db.sql(sql_query, {"employee_id": employee_id, "date_str": date_str})
+
+    return leave_application_exists
