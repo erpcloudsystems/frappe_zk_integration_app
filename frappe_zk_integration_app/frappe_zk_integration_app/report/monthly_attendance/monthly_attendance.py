@@ -87,7 +87,7 @@ def get_employee_logs(from_date, to_date, filters):
             em.employee_name as employee_name,
             em.department as department,
             em.branch as branch,
-            COALESCE(TIMEDIFF(st.end_time, st.start_time), '08:00:00') AS total_daily_hours
+            TIMEDIFF(st.end_time, st.start_time) AS total_daily_hours
         FROM
             `tabDevice Log` dl
             JOIN
@@ -112,6 +112,9 @@ def get_employee_logs(from_date, to_date, filters):
         department = employee.get("department")
         branch = employee.get("branch")
         total_daily_hours = employee.get("total_daily_hours")
+        if total_daily_hours is None or total_daily_hours == 'None':
+            total_daily_hours = "08:00:00"
+
 
         # Initialize a dictionary to store attendance for each date
         attendance = {}
@@ -160,8 +163,13 @@ def get_attendance_for_day(employee_id, date_str, total_daily_hours):
 
     in_time = attendance_data[0].in_time if attendance_data and attendance_data[0].in_time else "00:00:00"
     out_time = attendance_data[0].out_time if attendance_data and attendance_data[0].out_time else "00:00:00"
-
     total_shift_hours_str = str(total_daily_hours)
+
+    if total_shift_hours_str is None or total_shift_hours_str == 'None':
+        total_shift_hours_str = "08:00:00"
+    else:
+        total_shift_hours_str = total_shift_hours_str
+
     in_time_str = str(in_time)
     out_time_str = str(out_time)
 
