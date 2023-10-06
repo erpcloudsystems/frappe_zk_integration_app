@@ -87,7 +87,7 @@ def get_employee_logs(from_date, to_date, filters):
             em.employee_name as employee_name,
             em.department as department,
             em.branch as branch,
-            TIMEDIFF(st.end_time, st.start_time) AS total_daily_hours
+            COALESCE(TIMEDIFF(st.end_time, st.start_time), '08:00:00') AS total_daily_hours
         FROM
             `tabDevice Log` dl
             JOIN
