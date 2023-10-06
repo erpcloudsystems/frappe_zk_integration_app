@@ -7,7 +7,8 @@ def execute(filters=None):
         {"label": "Employee ID", "fieldname": "employee_id", "fieldtype": "Data", "width": 100},
         {"label": "Employee Name", "fieldname": "employee_name", "fieldtype": "Data", "width": 150},
         {"label": "Department", "fieldname": "department", "fieldtype": "Data", "width": 120},
-        {"label": "Branch", "fieldname": "branch", "fieldtype": "Data", "width": 120}
+        {"label": "Branch", "fieldname": "branch", "fieldtype": "Data", "width": 120},
+        {"label": "Daily Hours", "fieldname": "total_daily_hours", "fieldtype": "Data", "width": 120}
     ]
 
     # Get the date range from filters
@@ -20,12 +21,14 @@ def execute(filters=None):
         # date_str = current_date.strftime("%Y-%m-%d")
         date_str = str(current_date)
         day_number = current_date.day
+        month_number = current_date.month
         day_name = current_date.strftime("%A")
 
         # Append columns for "Day {date}-in," "Day {date}-out," and "Day {date}-hours"
-        columns.append({"label": f"{day_name}-{day_number}-IN", "fieldname": f"day_{day_number}_in", "fieldtype": "Data", "width": 130})
-        columns.append({"label": f"{day_name}-{day_number}-OUT", "fieldname": f"day_{day_number}_out", "fieldtype": "Data", "width": 130})
-        columns.append({"label": f"{day_name}-{day_number}-H", "fieldname": f"day_{day_number}_hours", "fieldtype": "Data", "width": 130})
+        columns.append({"label": f"{day_name}-{day_number}-{month_number}", "fieldname": f"day_{day_number}_in", "fieldtype": "Data", "width": 130})
+        columns.append({"label": f"{day_name}-{day_number}-{month_number}", "fieldname": f"day_{day_number}_out", "fieldtype": "Data", "width": 130})
+        columns.append({"label": f"{day_name}-{day_number}-{month_number}", "fieldname": f"day_{day_number}_hours", "fieldtype": "Data", "width": 130})
+        columns.append({"label": f"{day_name}-{day_number}-{month_number}", "fieldname": f"day_{day_number}_ovl", "fieldtype": "Data", "width": 130})
 
         # Move to the next date
         current_date += timedelta(days=1)
@@ -38,26 +41,68 @@ def execute(filters=None):
 def get_employee_logs(from_date, to_date, filters):
     # Initialize an empty list to store the results
     result = []
+    attendance2 = {}
+    current_date = from_date
+    while current_date <= to_date:
+        date_str = current_date.strftime("%Y-%m-%d")
+        day_number = current_date.day
+
+        attendance2[f"day_{day_number}_in"] = "First IN Log"
+        attendance2[f"day_{day_number}_out"] = "Last OUT Log"
+        attendance2[f"day_{day_number}_hours"] = "Working Hours Per Day"
+        attendance2[f"day_{day_number}_ovl"] = "Overtime-Late"
+
+        current_date += timedelta(days=1)
+
+
+    empty_attendance = {
+        "employee_id": "",
+        "employee_name": "",
+        "department": "",
+        "branch": "",
+        "total_daily_hours": "Total Hours as Shift",
+         **attendance2
+    }
+
+    # Insert the empty attendance record at the beginning of the result list
+    result.append(empty_attendance)
 
     # Define the filters for employees if specified
     conditions = ""
     params = {}
 
     if filters.get("employee"):
-        conditions += " and `tabEmployee`.name = %(employee)s"
+        conditions += " and dl.employee = %(employee)s"
 
     if filters.get("department"):
-        conditions += " and `tabEmployee`.department = %(department)s"
+        conditions += " and em.department = %(department)s"
 
     if filters.get("branch"):
-        conditions += " and `tabEmployee`.branch = %(branch)s"
+        conditions += " and em.branch = %(branch)s"
 
     # Construct the SQL query
-    employees = frappe.db.sql(f"""
-        SELECT name as employee_id, employee_name, department, branch
-        FROM `tabEmployee`
-        WHERE  status = 'Active'
-       {conditions} """.format(conditions=conditions), filters, as_dict=1)
+    sql_query = f"""
+        SELECT
+            dl.employee as employee_id,
+            em.employee_name as employee_name,
+            em.department as department,
+            em.branch as branch,
+            TIMEDIFF(st.end_time, st.start_time) AS total_daily_hours
+        FROM
+            `tabDevice Log` dl
+            JOIN
+            `tabEmployee` em ON em.name = dl.employee
+            LEFT JOIN
+            `tabShift Type` st ON em.default_shift = st.name
+        WHERE
+            dl.date BETWEEN %(from_date)s AND %(to_date)s
+            {conditions}
+        GROUP BY
+            dl.employee
+    """
+
+    # Execute the query
+    employees = frappe.db.sql(sql_query, {"from_date": from_date, "to_date": to_date, **filters}, as_dict=True)
 
 
     # Loop through each employee
@@ -66,6 +111,7 @@ def get_employee_logs(from_date, to_date, filters):
         employee_name = employee.get("employee_name")
         department = employee.get("department")
         branch = employee.get("branch")
+        total_daily_hours = employee.get("total_daily_hours")
 
         # Initialize a dictionary to store attendance for each date
         attendance = {}
@@ -75,12 +121,12 @@ def get_employee_logs(from_date, to_date, filters):
         while current_date <= to_date:
             date_str = current_date.strftime("%Y-%m-%d")
             day_number = current_date.day
-
-            in_time, out_time, time_difference = get_attendance_for_day(employee_id, date_str)
+            in_time, out_time, working_on_day, time_diff_wor_shift_daily = get_attendance_for_day(employee_id, date_str,total_daily_hours)
 
             attendance[f"day_{day_number}_in"] = in_time
             attendance[f"day_{day_number}_out"] = out_time
-            attendance[f"day_{day_number}_hours"] = time_difference
+            attendance[f"day_{day_number}_hours"] = working_on_day
+            attendance[f"day_{day_number}_ovl"] = time_diff_wor_shift_daily
 
             # Move to the next date
             current_date += timedelta(days=1)
@@ -91,12 +137,13 @@ def get_employee_logs(from_date, to_date, filters):
             "employee_name": employee_name,
             "department": department,
             "branch": branch,
+            "total_daily_hours": total_daily_hours,
             **attendance
         })
 
     return result
 
-def get_attendance_for_day(employee_id, date_str):
+def get_attendance_for_day(employee_id, date_str, total_daily_hours):
     sql_query = f"""
         SELECT
             TIME(MIN(time)) as in_time,
@@ -114,12 +161,22 @@ def get_attendance_for_day(employee_id, date_str):
     in_time = attendance_data[0].in_time if attendance_data and attendance_data[0].in_time else "00:00:00"
     out_time = attendance_data[0].out_time if attendance_data and attendance_data[0].out_time else "00:00:00"
 
+    total_shift_hours_str = str(total_daily_hours)
     in_time_str = str(in_time)
     out_time_str = str(out_time)
 
     in_time_obj = datetime.strptime(in_time_str, "%H:%M:%S")
     out_time_obj = datetime.strptime(out_time_str, "%H:%M:%S")
+    total_shift_hours_obj = datetime.strptime(total_shift_hours_str, "%H:%M:%S")
 
-    time_difference = out_time_obj - in_time_obj
+    working_on_day = out_time_obj - in_time_obj
+    working_on_day_str = str(working_on_day)
+    working_on_day_obj =  datetime.strptime(working_on_day_str, "%H:%M:%S")
+    time_diff_wor_shift_daily = working_on_day_obj - total_shift_hours_obj
+    if in_time == "00:00:00" and out_time == "00:00:00":
+        working_on_day = "<span style='color: red;'>Absent</span>"
+        time_diff_wor_shift_daily = "<span style='color: red;'>Absent</span>"
 
-    return in_time_str, out_time_str, str(time_difference)
+    # Convert the timedelta to a string in the format HH:MM:SS
+
+    return in_time, out_time, working_on_day, time_diff_wor_shift_daily
