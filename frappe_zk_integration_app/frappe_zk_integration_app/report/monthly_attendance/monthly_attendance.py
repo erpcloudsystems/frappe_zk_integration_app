@@ -60,7 +60,7 @@ def get_employee_logs(from_date, to_date, filters):
         "employee_name": "",
         "department": "",
         "branch": "",
-        "total_daily_hours": "Total Hours as",
+        "total_daily_hours": "Total Hours as Shift",
          **attendance2
     }
 
