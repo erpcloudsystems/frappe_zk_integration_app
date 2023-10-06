@@ -47,10 +47,11 @@ def get_employee_logs(from_date, to_date, filters):
         date_str = current_date.strftime("%Y-%m-%d")
         day_number = current_date.day
 
-        attendance2[f"day_{day_number}_in"] = "First IN Log"
-        attendance2[f"day_{day_number}_out"] = "Last OUT Log"
-        attendance2[f"day_{day_number}_hours"] = "Working Hours Per Day"
-        attendance2[f"day_{day_number}_ovl"] = "Overtime-Late"
+        attendance2[f"day_{day_number}_in"] = "<b><center>From</center></b>"
+        attendance2[f"day_{day_number}_out"] = "<b><center>To</center></b>"
+        attendance2[f"day_{day_number}_hours"] = "<b><center>Working Hours</center></b>"
+        attendance2[f"day_{day_number}_ovl"] = "<b><center>Overtime - Delay</center></b>"
+
 
         current_date += timedelta(days=1)
 
@@ -60,7 +61,7 @@ def get_employee_logs(from_date, to_date, filters):
         "employee_name": "",
         "department": "",
         "branch": "",
-        "total_daily_hours": "Total Hours as Shift",
+        "total_daily_hours": "<b><center>Hours as Shift Type</center></b>",
          **attendance2
     }
 
