@@ -32,7 +32,13 @@ def execute(filters=None):
 
         # Move to the next date
         current_date += timedelta(days=1)
+    # Add columns for employee summary
+    columns.extend([
+        {"label": "Working Days", "fieldname": "days_logged_in_out", "fieldtype": "Data", "width": 150},
+        {"label": "Total Working Hours", "fieldname": "total_working_hours", "fieldtype": "Data", "width": 150},
+        {"label": "Total Late Time - Overtime", "fieldname": "total_late_time", "fieldtype": "Data", "width": 150}
 
+    ])
     # Get employee logs
     data = get_employee_logs(from_date, to_date, filters)
 
@@ -108,6 +114,9 @@ def get_employee_logs(from_date, to_date, filters):
 
     # Loop through each employee
     for employee in employees:
+        days_worked = 0
+        total_working_hours = timedelta()
+        total_late_time = timedelta()
         employee_id = employee.get("employee_id")
         employee_name = employee.get("employee_name")
         department = employee.get("department")
@@ -115,7 +124,7 @@ def get_employee_logs(from_date, to_date, filters):
         total_daily_hours = employee.get("total_daily_hours")
         if total_daily_hours is None or total_daily_hours == 'None':
             total_daily_hours = "08:00:00"
-
+        days_worked = get_attendance_for_period_all(employee_id, from_date, to_date)
 
         # Initialize a dictionary to store attendance for each date
         attendance = {}
@@ -125,12 +134,29 @@ def get_employee_logs(from_date, to_date, filters):
         while current_date <= to_date:
             date_str = current_date.strftime("%Y-%m-%d")
             day_number = current_date.day
-            in_time, out_time, working_on_day, time_diff_wor_shift_daily = get_attendance_for_day(employee_id, date_str,total_daily_hours)
+            in_time, out_time, working_on_day, time_diff_wor_shift_daily  = get_attendance_for_day(employee_id, date_str,total_daily_hours)
+            if in_time != "00:00:00" and out_time != "00:00:00":
+                total_working_hours += working_on_day
+                total_late_time += time_diff_wor_shift_daily
+
+            on_leave = is_employee_on_leave(employee_id, date_str)
+            if on_leave:
+                working_on_day = "<span style='color: green;'>On Leave</span>"
+                time_diff_wor_shift_daily = "<span style='color: green;'>On Leave</span>"
+                in_time = "<span style='color: green;'>On Leave</span>"
+                out_time = "<span style='color: green;'>On Leave</span>"
+            elif in_time == "00:00:00" and out_time == "00:00:00":
+                working_on_day = "<span style='color: red;'>Absent</span>"
+                time_diff_wor_shift_daily = "<span style='color: red;'>Absent</span>"
+                in_time = "<span style='color: red;'>Absent</span>"
+                out_time = "<span style='color: red;'>Absent</span>"
 
             attendance[f"day_{day_number}_in"] = in_time
             attendance[f"day_{day_number}_out"] = out_time
             attendance[f"day_{day_number}_hours"] = working_on_day
             attendance[f"day_{day_number}_ovl"] = time_diff_wor_shift_daily
+
+
 
             # Move to the next date
             current_date += timedelta(days=1)
@@ -142,6 +168,9 @@ def get_employee_logs(from_date, to_date, filters):
             "department": department,
             "branch": branch,
             "total_daily_hours": total_daily_hours,
+            "days_logged_in_out": days_worked,
+            "total_working_hours": total_working_hours,
+            "total_late_time": total_late_time,
             **attendance
         })
 
@@ -182,17 +211,7 @@ def get_attendance_for_day(employee_id, date_str, total_daily_hours):
     working_on_day_str = str(working_on_day)
     working_on_day_obj =  datetime.strptime(working_on_day_str, "%H:%M:%S")
     time_diff_wor_shift_daily = working_on_day_obj - total_shift_hours_obj
-    on_leave = is_employee_on_leave(employee_id, date_str)
-    if on_leave:
-        working_on_day = "<span style='color: green;'>On Leave</span>"
-        time_diff_wor_shift_daily = "<span style='color: green;'>On Leave</span>"
-        in_time = "<span style='color: green;'>On Leave</span>"
-        out_time = "<span style='color: green;'>On Leave</span>"
-    elif in_time == "00:00:00" and out_time == "00:00:00":
-        working_on_day = "<span style='color: red;'>Absent</span>"
-        time_diff_wor_shift_daily = "<span style='color: red;'>Absent</span>"
-        in_time = "<span style='color: red;'>Absent</span>"
-        out_time = "<span style='color: red;'>Absent</span>"
+
 
     # Convert the timedelta to a string in the format HH:MM:SS
 
@@ -211,3 +230,23 @@ def is_employee_on_leave(employee_id, date_str):
     leave_application_exists = frappe.db.sql(sql_query, {"employee_id": employee_id, "date_str": date_str})
 
     return leave_application_exists
+
+def get_attendance_for_period_all(employee_id, from_date, to_date):
+    sql_query = f"""
+        SELECT
+           COUNT(time) as count
+        FROM
+            `tabDevice Log`
+        WHERE
+            employee = '{employee_id}'
+            AND date BETWEEN '{from_date}' AND '{to_date}'
+            GROUP BY
+                date
+    """
+
+    attendance_data = frappe.db.sql(sql_query, as_dict=True)
+
+    days_worked = len(attendance_data) if attendance_data else 0
+
+    return days_worked
+
