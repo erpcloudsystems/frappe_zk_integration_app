@@ -104,13 +104,15 @@ class ZKDevice(Document):
 def sync_employee():
     try:
         frappe.db.sql(
-            """
+                """
                 UPDATE `tabDevice Log` log
                 SET log.employee = (
                     SELECT name FROM tabEmployee WHERE attendance_device_id = log.enroll_no LIMIT 1
                 )
-            """
-        )
+                WHERE log.employee IS NULL OR log.employee = ''
+                """
+            )
+
         frappe.db.commit()
         frappe.msgprint(_("Done"))
     except:
