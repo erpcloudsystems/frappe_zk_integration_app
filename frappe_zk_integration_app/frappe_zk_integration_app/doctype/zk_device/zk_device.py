@@ -10,7 +10,7 @@ import frappe
 from dateutil import parser
 from frappe import _
 from frappe.model.document import Document
-from zk import ZK
+from frappe_zk_integration_app.zk import ZK
 
 DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
