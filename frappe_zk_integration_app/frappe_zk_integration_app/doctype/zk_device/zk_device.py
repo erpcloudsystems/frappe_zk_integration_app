@@ -29,7 +29,6 @@ class ZKDevice(Document):
         try:
             conn = zk.connect()
             logs = conn.get_attendance() or []
-
             last_log_users = {}
             period = self.period or 0
             count = 1
@@ -42,6 +41,7 @@ class ZKDevice(Document):
             last = self.last_log_row
 
             for log in logs:
+                
                 if show_progress:
                     frappe.publish_progress(
                         count * 100 / total, title=_("Getting Logs...")
@@ -59,14 +59,28 @@ class ZKDevice(Document):
 
                 try:
                     log.status = "IN" if log.status == 1 else "OUT"
-                    name = secrets.token_hex(8)
+                    # Generate the `name` using the desired format
+                    name = f"{log.user_id}_{log.timestamp.strftime('%Y%m%d%H%M%S')}_{log.punch}"
 
+                    # Define the SQL query
                     sql = """
                         INSERT INTO `tabDevice Log`
                             (name, employee, enroll_no, time, date, type, punch, creation, modified, owner, device)
                         VALUES
                             (%s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE
+                            employee = VALUES(employee),
+                            enroll_no = VALUES(enroll_no),
+                            time = VALUES(time),
+                            date = VALUES(date),
+                            type = VALUES(type),
+                            punch = VALUES(punch),
+                            modified = VALUES(modified),
+                            owner = VALUES(owner),
+                            device = VALUES(device)
                     """
+
+                    # Define the values to be used in the query
                     values = (
                         name,                
                         log.user_id,         
@@ -80,7 +94,7 @@ class ZKDevice(Document):
                         self.name            
                     )
 
-                    # Execute SQL query
+                    # Execute the query
                     frappe.db.sql(sql, values)
                     frappe.db.commit()  
 
@@ -94,7 +108,7 @@ class ZKDevice(Document):
 
             if last:
                 self.last_log_row = min(last, datetime.now())
-
+            self.reload()
             conn.enable_device()
         except Exception as e:
             frappe.msgprint(_("Process terminated: {}").format(e), indicator="red")

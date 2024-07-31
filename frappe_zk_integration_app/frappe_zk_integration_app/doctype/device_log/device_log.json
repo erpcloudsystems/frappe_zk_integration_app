@@ -23,14 +23,12 @@
    "in_standard_filter": 1,
    "label": "Employee",
    "options": "Employee",
-   "read_only": 1,
    "search_index": 1
   },
   {
    "fieldname": "enroll_no",
-   "fieldtype": "Int",
+   "fieldtype": "Data",
    "label": "Enroll No",
-   "read_only": 1,
    "search_index": 1
   },
   {
@@ -40,7 +38,6 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Time",
-   "read_only": 1,
    "search_index": 1
   },
   {
@@ -50,7 +47,6 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Date",
-   "read_only": 1,
    "search_index": 1
   },
   {
@@ -62,14 +58,12 @@
    "in_standard_filter": 1,
    "label": "Type",
    "options": "IN\nOUT",
-   "read_only": 1,
    "search_index": 1
   },
   {
    "fieldname": "punch",
    "fieldtype": "Data",
-   "label": "Punch",
-   "read_only": 1
+   "label": "Punch"
   },
   {
    "fieldname": "device",
@@ -78,15 +72,14 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Device",
-   "options": "ZK Device",
-   "read_only": 1
+   "options": "ZK Device"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2023-10-05 14:19:15.048667",
+ "modified": "2024-07-31 14:44:35.276632",
  "modified_by": "Administrator",
- "module": "Frappe Zk Integration App",
+ "module": "Frappe ZK Integration App",
  "name": "Device Log",
  "owner": "Administrator",
  "permissions": [
@@ -129,6 +122,7 @@
  ],
  "sort_field": "time",
  "sort_order": "DESC",
+ "states": [],
  "title_field": "enroll_no",
  "track_changes": 1
 }
