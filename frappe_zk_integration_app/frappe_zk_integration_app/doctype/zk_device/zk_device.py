@@ -10,6 +10,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe_zk_integration_app.zk import ZK
 from frappe.utils import now
+import secrets
 DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
@@ -58,7 +59,7 @@ class ZKDevice(Document):
 
                 try:
                     log.status = "IN" if log.status == 1 else "OUT"
-                    name = "{}-{}-{}".format(log.user_id, log.timestamp, log.status)
+                    name = secrets.token_hex(8)
 
                     sql = """
                         INSERT INTO `tabDevice Log`
