@@ -42,10 +42,10 @@ class ZKDevice(Document):
 
             for log in logs:
                 
-                if show_progress:
-                    frappe.publish_progress(
-                        count * 100 / total, title=_("Getting Logs...")
-                    )
+                # if show_progress:
+                #     frappe.publish_progress(
+                #         count * 100 / total, title=_("Getting Logs...")
+                #     )
                 count += 1
 
                 if self.last_log_row and (log.timestamp < self.last_log_row):
