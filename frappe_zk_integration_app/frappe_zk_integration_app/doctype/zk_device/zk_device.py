@@ -91,7 +91,7 @@ class ZKDevice(Document):
                             'device': self.name  # Assuming `self.name` refers to the device
                         })
                         device_log.insert(ignore_permissions=True)  # Insert without permissions check
-
+                        frappe.db.commit()
                     last_log_users[log.user_id] = log.timestamp
 
                 except Exception as e:
@@ -106,7 +106,7 @@ class ZKDevice(Document):
 
             # Reload the instance to reflect changes
             self.reload()
-
+            
             # Re-enable the device connection
             conn.enable_device()
 
@@ -118,6 +118,8 @@ class ZKDevice(Document):
         finally:
             # Always update the last connection time and ensure the device is disconnected
             self.last_connection_time = datetime.now()
+            self.save()
+            sync_employee()
             if conn:
                 conn.enable_device()
                 conn.disconnect()
