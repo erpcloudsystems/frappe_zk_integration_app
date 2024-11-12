@@ -22,7 +22,7 @@ class ZKDevice(Document):
             self.ip,
             port=self.port,
             password=self.password,
-            timeout=20,
+            timeout=1200,
             force_udp=self.udp or True,
             ommit_ping=self.ping or True,
         )
