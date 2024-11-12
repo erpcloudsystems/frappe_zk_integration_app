@@ -164,6 +164,8 @@ def get_active_device_logs(names=None):
     if names:
         names = json.loads(str(names))
     cur_time = datetime.now()
+    
+    # Get the list of devices to process
     devices = names or frappe.db.sql_list(
         """
         SELECT name FROM `tabZK Device`
@@ -172,12 +174,23 @@ def get_active_device_logs(names=None):
     )
 
     for device in devices:
-        doc = frappe.get_doc("ZK Device", device)
-        try:
-            doc.get_device_log(show_progress=True)
-        except Exception as e:
-            frappe.msgprint(_("Process terminated: {}").format(e), indicator="red")
+        # Enqueue the job to run in the background with long timeout
+        frappe.enqueue(
+            'frappe_zk_integration_app.frappe_zk_integration_app.doctype.zk_device.zk_device.device_log_background_job',
+            device=device,
+            queue='long',
+            timeout=150000
+        )
 
+def device_log_background_job(device):
+    """Background job to get device log for a specific device."""
+    doc = frappe.get_doc("ZK Device", device)
+    try:
+        # Call the function to get device logs in the background
+        doc.get_device_log(show_progress=True)
+    except Exception as e:
+        # Log any errors encountered during the process
+        frappe.msgprint(_("Process terminated for device {}: {}").format(device, e), indicator="red")
 
 @frappe.whitelist()
 def check_connection(device_id, show_progress=False):
