@@ -26,31 +26,39 @@ class ZKDevice(Document):
             force_udp=self.udp or True,
             ommit_ping=self.ping or True,
         )
+
         try:
             conn = zk.connect()
             logs = conn.get_attendance() or []
             last_log_users = {}
             period = self.period or 0
-            count = 1
             total = len(logs)
-            if not total:
-                frappe.throw(_("Empty Logs"))
 
+            if not total:
+                frappe.throw(_("No logs found"))
+
+            # Handle last log row, ensuring it's properly parsed
             if self.last_log_row:
                 self.last_log_row = parser.parse(str(self.last_log_row))
+
             last = self.last_log_row
+            count = 0
 
             for log in logs:
-                
-                # if show_progress:
-                #     frappe.publish_progress(
-                #         count * 100 / total, title=_("Getting Logs...")
-                #     )
                 count += 1
 
+                # Update progress bar
+                if show_progress:
+                    frappe.publish_progress(
+                        count * 100 / total,
+                        title=_("Fetching Logs...")
+                    )
+
+                # Skip logs before last log row
                 if self.last_log_row and (log.timestamp < self.last_log_row):
                     continue
 
+                # Check for period filtering (e.g., only logs after the last log for the user)
                 last_timestamp = last_log_users.get(log.user_id)
                 if period and last_timestamp:
                     diff = (log.timestamp - last_timestamp).seconds / 3600
@@ -59,70 +67,60 @@ class ZKDevice(Document):
 
                 try:
                     log.status = "IN" if log.status == 1 else "OUT"
-                    # Generate the `name` using the desired format
+
+                    # Generate a unique name for the log entry
                     name = f"{log.user_id}_{log.timestamp.strftime('%Y%m%d%H%M%S')}_{log.punch}"
 
-                    # Define the SQL query
-                    sql = """
-                        INSERT INTO `tabDevice Log`
-                            (name, employee, enroll_no, time, date, type, punch, creation, modified, owner, device)
-                        VALUES
-                            (%s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON DUPLICATE KEY UPDATE
-                            employee = VALUES(employee),
-                            enroll_no = VALUES(enroll_no),
-                            time = VALUES(time),
-                            date = VALUES(date),
-                            type = VALUES(type),
-                            punch = VALUES(punch),
-                            modified = VALUES(modified),
-                            owner = VALUES(owner),
-                            device = VALUES(device)
-                    """
+                    # Check if the log already exists in the database using Frappe ORM
+                    existing_log = frappe.db.exists('Device Log', name)
 
-                    # Define the values to be used in the query
-                    values = (
-                        name,                
-                        log.user_id,         
-                        log.timestamp,       
-                        log.timestamp.date(),
-                        log.status,          
-                        log.punch,           
-                        frappe.utils.now(),  
-                        frappe.utils.now(),  
-                        frappe.session.user, 
-                        self.name            
-                    )
-
-                    # Execute the query
-                    frappe.db.sql(sql, values)
-                    frappe.db.commit()  
+                    if not existing_log:
+                        # Create a new device log entry using Frappe ORM
+                        device_log = frappe.get_doc({
+                            'doctype': 'Device Log',
+                            'name': name,
+                            'employee': None,  # Set the employee if needed
+                            'enroll_no': log.user_id,
+                            'time': log.timestamp,
+                            'date': log.timestamp.date(),
+                            'type': log.status,
+                            'punch': log.punch,
+                            'creation': now(),
+                            'modified': now(),
+                            'owner': frappe.session.user,
+                            'device': self.name  # Assuming `self.name` refers to the device
+                        })
+                        device_log.insert(ignore_permissions=True)  # Insert without permissions check
 
                     last_log_users[log.user_id] = log.timestamp
 
                 except Exception as e:
-                    # Log error with details
+                    # Log the error with specific details
                     frappe.log_error(message=str(e), title=_("Log Insertion Error"))
 
                 last = log.timestamp
 
+            # Update the last log row timestamp to the latest processed log
             if last:
                 self.last_log_row = min(last, datetime.now())
+
+            # Reload the instance to reflect changes
             self.reload()
+
+            # Re-enable the device connection
             conn.enable_device()
+
         except Exception as e:
+            # Display error message and save error details in the instance
             frappe.msgprint(_("Process terminated: {}").format(e), indicator="red")
             self.last_connection_error = str(e)
+
         finally:
+            # Always update the last connection time and ensure the device is disconnected
             self.last_connection_time = datetime.now()
             if conn:
                 conn.enable_device()
                 conn.disconnect()
-
-        self.get_after_mins = self.get_after_mins or 5
-        self.excecution_time = datetime.now() + timedelta(minutes=self.get_after_mins)
-        self.save()
-        self.sync_employee()
 
     def sync_employee(self):
         try:
