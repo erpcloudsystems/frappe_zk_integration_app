@@ -15,13 +15,13 @@ frappe.ui.form.on("ZK Device", {
             });
         }
     },
+
     get_device_logs: function (frm) {
         frm.save();
         frappe.call({
-            method: "get_device_log",
-            doc: frm.doc,
+            method: "frappe_zk_integration_app.frappe_zk_integration_app.doctype.zk_device.zk_device.send_specific_device_log",
             args: {
-                show_progress: 1,
+                device_name: frm.doc.name  
             },
             freeze: true,
             callback: function () {
@@ -30,6 +30,7 @@ frappe.ui.form.on("ZK Device", {
             },
         });
     },
+
     sync_employee: function (frm) {
         frappe.call({
             method: "frappe_zk_integration_app.frappe_zk_integration_app.doctype.zk_device.zk_device.sync_employee",
@@ -39,6 +40,7 @@ frappe.ui.form.on("ZK Device", {
             },
         });
     },
+
     test_job: function (frm) {
         frappe.call({
             method: "frappe_zk_integration_app.frappe_zk_integration_app.doctype.zk_device.zk_device.get_active_device_logs",
@@ -48,6 +50,7 @@ frappe.ui.form.on("ZK Device", {
             },
         });
     },
+
     check_connection: function (frm) {
         frappe.call({
             method: "frappe_zk_integration_app.frappe_zk_integration_app.doctype.zk_device.zk_device.check_connection",

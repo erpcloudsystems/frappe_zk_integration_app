@@ -181,7 +181,18 @@ def get_active_device_logs(names=None):
             queue='long',
             timeout=150000
         )
+        
+@frappe.whitelist()
+def send_specific_device_log(device_name):
+    # Enqueue the job with the specific device name
+    frappe.enqueue(
+        'frappe_zk_integration_app.frappe_zk_integration_app.doctype.zk_device.zk_device.device_log_background_job',
+        device=device_name,
+        queue='long',
+        timeout=150000
+    )
 
+@frappe.whitelist()
 def device_log_background_job(device):
     """Background job to get device log for a specific device."""
     doc = frappe.get_doc("ZK Device", device)
