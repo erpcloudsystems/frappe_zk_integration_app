@@ -51,7 +51,7 @@ class ZKDevice(Document):
                 if show_progress:
                     frappe.publish_progress(
                         count * 100 / total,
-                        title=_("Fetching Logs...")
+                        title = _("Fetching Logs for {0}...").format(self.name)
                     )
 
                 # Skip logs before last log row
