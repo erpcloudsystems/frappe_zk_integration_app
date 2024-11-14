@@ -28,8 +28,32 @@ class ZKDevice(Document):
         )
 
         try:
+            # Connect to the device
             conn = zk.connect()
-            logs = conn.get_attendance() or []
+
+            # Fetch all logs initially, without filtering
+            all_logs = conn.get_attendance() or []
+            total_logs_before_filter = len(all_logs)
+
+            # Determine start date time from last log row if available
+            start_datetime = self.last_log_row
+            if start_datetime:
+                start_datetime = parser.parse(str(start_datetime))
+
+            # Get current time as a datetime object for filtering
+            current_datetime = datetime.now()
+
+            # Filter logs based on start date time and current time
+            logs = [
+                log for log in all_logs
+                if (not start_datetime or log.timestamp >= start_datetime) 
+                and log.timestamp < current_datetime
+            ]
+            
+            total_logs_after_filter = len(logs)
+
+            # Initialize counters
+            total_inserted_logs = 0
             last_log_users = {}
             period = self.period or 0
             total = len(logs)
@@ -37,12 +61,8 @@ class ZKDevice(Document):
             if not total:
                 frappe.throw(_("No logs found"))
 
-            # Handle last log row, ensuring it's properly parsed
-            if self.last_log_row:
-                self.last_log_row = parser.parse(str(self.last_log_row))
-
-            last = self.last_log_row
             count = 0
+            last = None  # To track the last processed log timestamp
 
             for log in logs:
                 count += 1
@@ -51,31 +71,28 @@ class ZKDevice(Document):
                 if show_progress:
                     frappe.publish_progress(
                         count * 100 / total,
-                        title = _("Fetching Logs for {0}...").format(self.name)
+                        title=_("Fetching Logs for {0}...").format(self.name)
                     )
 
-                # Skip logs before last log row
-                if self.last_log_row and (log.timestamp < self.last_log_row):
-                    continue
-
-                # Check for period filtering (e.g., only logs after the last log for the user)
+                # Period filter check (skip if the log is within the restricted period)
                 last_timestamp = last_log_users.get(log.user_id)
                 if period and last_timestamp:
                     diff = (log.timestamp - last_timestamp).seconds / 3600
                     if diff < period:
                         continue
 
+                # Process each log entry
                 try:
                     log.status = "IN" if log.status == 1 else "OUT"
 
                     # Generate a unique name for the log entry
                     name = f"{log.user_id}_{log.timestamp.strftime('%Y%m%d%H%M%S')}_{log.punch}"
 
-                    # Check if the log already exists in the database using Frappe ORM
+                    # Check if the log already exists in the database
                     existing_log = frappe.db.exists('Device Log', name)
 
                     if not existing_log:
-                        # Create a new device log entry using Frappe ORM
+                        # Create and insert new device log entry
                         device_log = frappe.get_doc({
                             'doctype': 'Device Log',
                             'name': name,
@@ -88,41 +105,55 @@ class ZKDevice(Document):
                             'creation': now(),
                             'modified': now(),
                             'owner': frappe.session.user,
-                            'device': self.name  # Assuming `self.name` refers to the device
+                            'device': self.name
                         })
-                        device_log.insert(ignore_permissions=True)  # Insert without permissions check
+                        device_log.insert(ignore_permissions=True)
                         frappe.db.commit()
-                    last_log_users[log.user_id] = log.timestamp
+                        total_inserted_logs += 1
 
+                    last_log_users[log.user_id] = log.timestamp
                 except Exception as e:
-                    # Log the error with specific details
+                    # Log error for any issues encountered with a specific log
                     frappe.log_error(message=str(e), title=_("Log Insertion Error"))
 
-                last = log.timestamp
+                last = log.timestamp  # Update last timestamp processed
 
-            # Update the last log row timestamp to the latest processed log
+            # After all logs are processed, update the last_log_row to the latest timestamp
             if last:
-                self.last_log_row = min(last, datetime.now())
+                if last > datetime.now():
+                    self.last_log_row = now()  # Set to current time if last is in the future
+                else:
+                    self.last_log_row = last
 
-            # Reload the instance to reflect changes
-            self.reload()
-            
+            # Capture the execution date and time for logging
+            execution_datetime = now()
+
+            # Log the processing summary in the last_connection_error field
+            self.last_connection_error = _(
+                "Log Processing Summary (Executed on {0}):\n"
+                "Total logs before filtering: {1}.\n"
+                "Total logs after filtering by start date: {2}.\n"
+                "Total logs inserted into the system: {3}."
+            ).format(execution_datetime, total_logs_before_filter, total_logs_after_filter, total_inserted_logs)
+
             # Re-enable the device connection
             conn.enable_device()
 
         except Exception as e:
-            # Display error message and save error details in the instance
+            # Handle errors in the overall process
             frappe.msgprint(_("Process terminated: {}").format(e), indicator="red")
             self.last_connection_error = str(e)
 
         finally:
-            # Always update the last connection time and ensure the device is disconnected
+            # Ensure the last connection time is updated and device is disconnected
             self.last_connection_time = datetime.now()
             self.save()
-            sync_employee()
+            self.sync_employee()
+
             if conn:
                 conn.enable_device()
                 conn.disconnect()
+
 
     def sync_employee(self):
         try:

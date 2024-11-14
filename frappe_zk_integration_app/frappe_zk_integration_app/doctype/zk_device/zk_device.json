@@ -1,189 +1,190 @@
 {
-    "actions": [],
-    "autoname": "field:device_name",
-    "creation": "2021-04-01 22:50:04.854829",
-    "doctype": "DocType",
-    "editable_grid": 1,
-    "engine": "InnoDB",
-    "field_order": [
-        "device_name",
-        "connection_details",
-        "ip",
-        "password",
-        "period",
-        "active",
-        "ping",
-        "column_break_5",
-        "port",
-        "auto_attendance",
-        "get_after_mins",
-        "excecution_time",
-        "udp",
-        "last_connection_details_section",
-        "last_log_row",
-        "last_connection_time",
-        "last_connection_error"
-    ],
-    "fields": [
-        {
-            "fieldname": "device_name",
-            "fieldtype": "Data",
-            "in_list_view": 1,
-            "label": "Device Name",
-            "reqd": 1,
-            "translatable": 1,
-            "unique": 1
-        },
-        {
-            "fieldname": "connection_details",
-            "fieldtype": "Section Break",
-            "label": "Connection Details"
-        },
-        {
-            "default": "192.168.1.201",
-            "fieldname": "ip",
-            "fieldtype": "Data",
-            "in_list_view": 1,
-            "label": "IP",
-            "reqd": 1
-        },
-        {
-            "default": "0",
-            "fieldname": "password",
-            "fieldtype": "Int",
-            "in_list_view": 1,
-            "label": "Password",
-            "reqd": 1
-        },
-        {
-            "fieldname": "column_break_5",
-            "fieldtype": "Column Break"
-        },
-        {
-            "default": "4370",
-            "fieldname": "port",
-            "fieldtype": "Int",
-            "in_list_view": 1,
-            "label": "Port",
-            "reqd": 1
-        },
-        {
-            "default": "1",
-            "fieldname": "auto_attendance",
-            "fieldtype": "Check",
-            "label": "Auto Attendance "
-        },
-        {
-            "collapsible": 1,
-            "fieldname": "last_connection_details_section",
-            "fieldtype": "Section Break",
-            "label": "Last Connection Details"
-        },
-        {
-            "fieldname": "last_log_row",
-            "fieldtype": "Datetime",
-            "label": "Last Log Row"
-        },
-        {
-            "fieldname": "last_connection_time",
-            "fieldtype": "Datetime",
-            "label": "Last Connection Time",
-            "read_only": 1
-        },
-        {
-            "fieldname": "last_connection_error",
-            "fieldtype": "Text",
-            "label": "Last Connection Error",
-            "read_only": 1
-        },
-        {
-            "default": "5",
-            "fieldname": "period",
-            "fieldtype": "Int",
-            "label": "Period Difference (Mins)"
-        },
-        {
-            "default": "60",
-            "depends_on": "auto_attendance",
-            "fieldname": "get_after_mins",
-            "fieldtype": "Int",
-            "label": "Get After (Mins)"
-        },
-        {
-            "default": "Now",
-            "depends_on": "auto_attendance",
-            "fieldname": "excecution_time",
-            "fieldtype": "Datetime",
-            "label": "Excecution Time",
-            "read_only": 1
-        },
-        {
-            "default": "1",
-            "fieldname": "ping",
-            "fieldtype": "Check",
-            "label": "Ping"
-        },
-        {
-            "default": "1",
-            "fieldname": "udp",
-            "fieldtype": "Check",
-            "label": "UDP"
-        },
-        {
-            "default": "1",
-            "fieldname": "active",
-            "fieldtype": "Check",
-            "label": "Active"
-        }
-    ],
-    "index_web_pages_for_search": 1,
-    "links": [],
-    "modified": "2022-03-07 21:37:22.785769",
-    "modified_by": "Administrator",
-    "module": "Frappe ZK Integration App",
-    "name": "ZK Device",
-    "owner": "Administrator",
-    "permissions": [
-        {
-            "create": 1,
-            "delete": 1,
-            "email": 1,
-            "export": 1,
-            "print": 1,
-            "read": 1,
-            "report": 1,
-            "role": "System Manager",
-            "share": 1,
-            "write": 1
-        },
-        {
-            "create": 1,
-            "delete": 1,
-            "email": 1,
-            "export": 1,
-            "print": 1,
-            "read": 1,
-            "report": 1,
-            "role": "HR Manager",
-            "share": 1,
-            "write": 1
-        },
-        {
-            "create": 1,
-            "delete": 1,
-            "email": 1,
-            "export": 1,
-            "print": 1,
-            "read": 1,
-            "report": 1,
-            "role": "HR User",
-            "share": 1,
-            "write": 1
-        }
-    ],
-    "show_name_in_global_search": 1,
-    "sort_field": "last_connection_time",
-    "sort_order": "DESC",
-    "title_field": "device_name",
-    "track_changes": 1
+ "actions": [],
+ "autoname": "field:device_name",
+ "creation": "2021-04-01 22:50:04.854829",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "device_name",
+  "connection_details",
+  "ip",
+  "password",
+  "period",
+  "active",
+  "ping",
+  "column_break_5",
+  "port",
+  "auto_attendance",
+  "get_after_mins",
+  "excecution_time",
+  "udp",
+  "last_connection_details_section",
+  "last_log_row",
+  "last_connection_time",
+  "last_connection_error"
+ ],
+ "fields": [
+  {
+   "fieldname": "device_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Device Name",
+   "reqd": 1,
+   "translatable": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "connection_details",
+   "fieldtype": "Section Break",
+   "label": "Connection Details"
+  },
+  {
+   "default": "192.168.1.201",
+   "fieldname": "ip",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "IP",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "password",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Password",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_5",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "4370",
+   "fieldname": "port",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Port",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "auto_attendance",
+   "fieldtype": "Check",
+   "label": "Auto Attendance "
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "last_connection_details_section",
+   "fieldtype": "Section Break",
+   "label": "Last Connection Details"
+  },
+  {
+   "fieldname": "last_log_row",
+   "fieldtype": "Datetime",
+   "label": "Last Log Row"
+  },
+  {
+   "fieldname": "last_connection_time",
+   "fieldtype": "Datetime",
+   "label": "Last Connection Time",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_connection_error",
+   "fieldtype": "Text",
+   "label": "Last Connection Details",
+   "read_only": 1
+  },
+  {
+   "default": "5",
+   "fieldname": "period",
+   "fieldtype": "Int",
+   "label": "Period Difference (Mins)"
+  },
+  {
+   "default": "60",
+   "depends_on": "auto_attendance",
+   "fieldname": "get_after_mins",
+   "fieldtype": "Int",
+   "label": "Get After (Mins)"
+  },
+  {
+   "default": "Now",
+   "depends_on": "auto_attendance",
+   "fieldname": "excecution_time",
+   "fieldtype": "Datetime",
+   "label": "Excecution Time",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "ping",
+   "fieldtype": "Check",
+   "label": "Ping"
+  },
+  {
+   "default": "1",
+   "fieldname": "udp",
+   "fieldtype": "Check",
+   "label": "UDP"
+  },
+  {
+   "default": "1",
+   "fieldname": "active",
+   "fieldtype": "Check",
+   "label": "Active"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2024-11-14 16:26:55.660056",
+ "modified_by": "Administrator",
+ "module": "Frappe ZK Integration App",
+ "name": "ZK Device",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR User",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "show_name_in_global_search": 1,
+ "sort_field": "last_connection_time",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "device_name",
+ "track_changes": 1
 }
