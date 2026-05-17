@@ -20,7 +20,7 @@ class DeviceLog(Document):
 def create_employee_checkin(names=None):
     sync_employee()
     sql = """
-		INSERT INTO `tabEmployee Checkin` (name, employee, time, log_type, device_log, device, creation, modified, owner)
+		INSERT INTO `tabEmployee Checkin` (name, employee, time, log_type, device_log, device_id, creation, modified, owner)
 		SELECT name, employee, time, type, name, device, creation, modified, owner
 		FROM `tabDevice Log`
 		WHERE employee IS NOT NULL

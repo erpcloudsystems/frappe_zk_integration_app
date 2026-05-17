@@ -21,6 +21,7 @@
   "udp",
   "last_connection_details_section",
   "last_log_row",
+  "fetch_from_date",
   "last_connection_time",
   "last_connection_error"
  ],
@@ -83,6 +84,11 @@
    "fieldname": "last_log_row",
    "fieldtype": "Datetime",
    "label": "Last Log Row"
+  },
+  {
+   "fieldname": "fetch_from_date",
+   "fieldtype": "Date",
+   "label": "Fetch From Date"
   },
   {
    "fieldname": "last_connection_time",

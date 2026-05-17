@@ -35,10 +35,13 @@ class ZKDevice(Document):
             all_logs = conn.get_attendance() or []
             total_logs_before_filter = len(all_logs)
 
-            # Determine start date time from last log row if available
-            start_datetime = self.last_log_row
-            if start_datetime:
-                start_datetime = parser.parse(str(start_datetime))
+            # Determine start date time from fetch_from_date or last_log_row
+            start_datetime = None
+            if self.fetch_from_date:
+                fetch_date = parser.parse(str(self.fetch_from_date)).date()
+                start_datetime = datetime.combine(fetch_date, datetime.min.time())
+            elif self.last_log_row:
+                start_datetime = parser.parse(str(self.last_log_row))
 
             # Get current time as a datetime object for filtering
             current_datetime = datetime.now()
@@ -71,7 +74,7 @@ class ZKDevice(Document):
                 if show_progress:
                     frappe.publish_progress(
                         count * 100 / total,
-                        title=_("Fetching Logs for {0}...").format(self.name)
+                        title=_("Fetching Logs for {0}...").format(self.device_name)
                     )
 
                 # Period filter check (skip if the log is within the restricted period)
@@ -105,7 +108,7 @@ class ZKDevice(Document):
                             'creation': now(),
                             'modified': now(),
                             'owner': frappe.session.user,
-                            'device': self.name
+                            'device': self.device_name
                         })
                         device_log.insert(ignore_permissions=True)
                         frappe.db.commit()
@@ -124,6 +127,9 @@ class ZKDevice(Document):
                     self.last_log_row = now()  # Set to current time if last is in the future
                 else:
                     self.last_log_row = last
+
+            # Clear the manual fetch date so normal cursor resumes next time
+            self.fetch_from_date = None
 
             # Capture the execution date and time for logging
             execution_datetime = now()
