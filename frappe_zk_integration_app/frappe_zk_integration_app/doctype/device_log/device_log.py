@@ -18,31 +18,15 @@ class DeviceLog(Document):
 
 @frappe.whitelist()
 def create_employee_checkin(names=None):
+    """API-callable wrapper: sync employees then create checkin records."""
     sync_employee()
-    sql = """
-		INSERT INTO `tabEmployee Checkin` (name, employee, time, log_type, device_log, device_id, creation, modified, owner)
-		SELECT name, employee, time, type, name, device, creation, modified, owner
-		FROM `tabDevice Log`
-		WHERE employee IS NOT NULL
-		AND name NOT IN (SELECT device_log FROM `tabEmployee Checkin` WHERE device_log IS NOT NULL);
-	"""
-
-    frappe.db.sql(sql)
-    frappe.db.commit()
+    from frappe_zk_integration_app.tasks import create_employee_checkin_internal
+    create_employee_checkin_internal()
 
 
 def execute(names=None):
+    """Cron entry point — only enqueues background jobs, never blocks the scheduler."""
     try:
-        get_active_device_logs()
-    except:
-        pass
-
-    try:
-        sync_employee()
-    except:
-        pass
-
-    try:
-        create_employee_checkin()
-    except:
-        pass
+        get_active_device_logs(names=names)
+    except Exception as e:
+        frappe.log_error(message=str(e), title="ZK Scheduler Error")

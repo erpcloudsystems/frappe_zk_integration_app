@@ -17,53 +17,115 @@ frappe.ui.form.on("ZK Device", {
     },
 
     get_device_logs: function (frm) {
-        frm.save();
+        // Guard: ask the user to save unsaved changes first so fetch_from_date etc. are persisted
+        if (frm.is_dirty()) {
+            frappe.show_alert({
+                message: __("Please save your changes before fetching logs."),
+                indicator: "orange"
+            }, 5);
+            return;
+        }
+
+        // Remove leftover listeners from a previous (possibly failed) click
+        if (frm._zk_cleanup) {
+            frm._zk_cleanup();
+        }
+
+        let device_label = frm.doc.device_name || frm.doc.name;
+
+        // --- cleanup helper ---------------------------------------------------
+        let cleanup = function () {
+            frappe.realtime.off("zk_job_done", handlers.done);
+            frappe.realtime.off("zk_job_error", handlers.error);
+            frappe.hide_progress();
+            frm._zk_cleanup = null;
+        };
+
+        // --- completion handlers ----------------------------------------------
+        let handlers = {
+            done: function (data) {
+                if (data.device !== frm.doc.name) return;
+                cleanup();
+                frappe.show_alert({ message: data.message, indicator: "green" }, 10);
+                frm.reload_doc();
+            },
+            error: function (data) {
+                if (data.device !== frm.doc.name) return;
+                cleanup();
+                frappe.msgprint({
+                    title: __("Device Error"),
+                    message: data.error,
+                    indicator: "red"
+                });
+                frm.reload_doc();
+            }
+        };
+
+        frm._zk_cleanup = cleanup;
+        frappe.realtime.on("zk_job_done", handlers.done);
+        frappe.realtime.on("zk_job_error", handlers.error);
+
+        // Show progress bar immediately.
+        // Frappe's built-in realtime listener automatically keeps it updated
+        // as the background job calls frappe.publish_progress().
+        frappe.show_progress(
+            __("Fetching Logs from {0}").replace("{0}", device_label),
+            0, 100,
+            __("Connecting to device...")
+        );
+
         frappe.call({
             method: "frappe_zk_integration_app.frappe_zk_integration_app.doctype.zk_device.zk_device.send_specific_device_log",
-            args: {
-                device_name: frm.doc.name  
+            args: { device_name: frm.doc.name },
+            callback: function (r) {
+                if (r.exc) {
+                    cleanup();
+                    frappe.msgprint({
+                        title: __("Queue Error"),
+                        message: __("Could not queue the job — check the error log."),
+                        indicator: "red"
+                    });
+                } else {
+                    frappe.show_alert({
+                        message: __("Job queued — fetching from device..."),
+                        indicator: "blue"
+                    }, 4);
+                }
             },
-            freeze: true,
-            callback: function () {
-                frappe.hide_progress();
-                frm.refresh();
-            },
+            error: function () { cleanup(); }
         });
     },
 
     sync_employee: function (frm) {
         frappe.call({
             method: "frappe_zk_integration_app.frappe_zk_integration_app.doctype.zk_device.zk_device.sync_employee",
+            freeze: true,
+            freeze_message: __("Syncing employee data..."),
             callback: function () {
-                frappe.hide_progress();
-                frm.refresh();
+                frm.reload_doc();
+                frappe.show_alert({ message: __("Employee sync complete"), indicator: "green" }, 4);
             },
-        });
-    },
-
-    test_job: function (frm) {
-        frappe.call({
-            method: "frappe_zk_integration_app.frappe_zk_integration_app.doctype.zk_device.zk_device.get_active_device_logs",
-            callback: function () {
-                frappe.hide_progress();
-                frm.refresh();
-            },
+            error: function () {
+                frappe.show_alert({ message: __("Sync failed — check error log"), indicator: "red" }, 5);
+            }
         });
     },
 
     check_connection: function (frm) {
         frappe.call({
             method: "frappe_zk_integration_app.frappe_zk_integration_app.doctype.zk_device.zk_device.check_connection",
-            args: {
-                device_id: frm.doc.name, // Pass the device ID
-                show_progress: 1
-            },
+            args: { device_id: frm.doc.name },
             freeze: true,
-            callback: function (response) {
-                if (response.message === "Success") {
-                    frappe.msgprint(__("Connection Successful"));
+            freeze_message: __("Testing connection..."),
+            callback: function (r) {
+                if (r.message === "Success") {
+                    frappe.show_alert({ message: __("Connection Successful"), indicator: "green" }, 5);
                 } else {
-                    frappe.msgprint(__("Connection Failed: ") + response.message);
+                    frappe.msgprint({
+                        title: __("Connection Failed"),
+                        message: r.message,
+                        indicator: "red"
+                    });
                 }
             }
         });

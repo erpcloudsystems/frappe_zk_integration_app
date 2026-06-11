@@ -110,14 +110,13 @@ app_license = "MIT"
 
 scheduler_events = {
     "cron": {
+        # Pull attendance from all active ZK devices every 5 minutes.
+        # Each device fetch is offloaded to a background worker (long queue),
+        # so the scheduler itself returns almost instantly.
         "0/5 * * * *": [
             "frappe_zk_integration_app.frappe_zk_integration_app.doctype.device_log.device_log.execute",
         ]
     },
-    "daily": [
-        "frappe_zk_integration_app.frappe_zk_integration_app.doctype.zk_device.zk_device.get_active_device_logs",
-        "frappe_zk_integration_app.frappe_zk_integration_app.doctype.device_log.device_log.create_employee_checkin",
-    ],
     "hourly": ["frappe_zk_integration_app.tasks.update_employee_name_from_checkin"],
 }
 
