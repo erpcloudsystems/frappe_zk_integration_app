@@ -17,25 +17,52 @@ DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 _JOB_TIMEOUT = 300  # 5 minutes
 
 
+def _reconnect_db():
+    """
+    Re-establish the MariaDB connection if it was dropped during a long
+    external operation (e.g. waiting for a ZK device to stream all records).
+
+    MySQL/MariaDB silently closes idle connections when wait_timeout expires.
+    Call this before any DB operation that follows a long network call.
+    """
+    try:
+        frappe.db.sql("SELECT 1")
+    except Exception:
+        frappe.db.connect()
+
+
 class ZKDevice(Document):
     @frappe.whitelist()
     def get_device_log(self, show_progress=False):
-        conn = None
-        zk = ZK(
-            self.ip,
-            port=self.port,
-            password=self.password,
-            timeout=30,                  # per-operation socket timeout (seconds)
-            force_udp=self.udp or True,
-            ommit_ping=self.ping or True,
-        )
+        """
+        Pull attendance records from the ZK device, insert new ones, and
+        advance the cursor (last_log_row).
 
+        Architecture note — two clearly separated phases:
+          Phase 1  Network I/O only.  ZK socket is open, DB is idle.
+          Phase 2  DB I/O only.  ZK socket is closed, DB is reconnected.
+
+        This separation avoids the InterfaceError that occurs when the DB
+        connection is silently dropped by MySQL during a long ZK fetch.
+        """
+        conn = None
+        inserted_count = 0
+
+        # ── Phase 1: ZK network I/O (DB intentionally not touched) ───────
         try:
+            zk = ZK(
+                self.ip,
+                port=self.port,
+                password=self.password,
+                timeout=30,
+                force_udp=self.udp or True,
+                ommit_ping=self.ping or True,
+            )
             conn = zk.connect()
             all_logs = conn.get_attendance() or []
             total_logs_before_filter = len(all_logs)
 
-            # Lower bound for timestamps we care about
+            # Determine lower-bound timestamp
             start_datetime = None
             if self.fetch_from_date:
                 fetch_date = parser.parse(str(self.fetch_from_date)).date()
@@ -51,36 +78,66 @@ class ZKDevice(Document):
             ]
             total_logs_after_filter = len(logs)
 
-            if not logs:
+            # Apply per-user period filter + generate deterministic names
+            period = self.period or 0
+            last_log_users = {}
+            candidates = []  # list of (name, log)
+
+            for log in logs:
+                log.status = "IN" if log.status == 1 else "OUT"
+                enroll_no = str(log.user_id).strip()
+                name = "{}_{}_{}".format(
+                    enroll_no,
+                    log.timestamp.strftime("%Y%m%d%H%M%S"),
+                    log.punch,
+                )
+                last_ts = last_log_users.get(enroll_no)
+                if period and last_ts:
+                    if (log.timestamp - last_ts).total_seconds() / 3600 < period:
+                        continue
+                last_log_users[enroll_no] = log.timestamp
+                candidates.append((name, enroll_no, log))
+
+        except Exception as fetch_exc:
+            # Store error; Phase 2 will persist it via self.save()
+            total_logs_before_filter = 0
+            total_logs_after_filter = 0
+            candidates = []
+            fetch_error = str(fetch_exc)
+            frappe.log_error(
+                message=fetch_error,
+                title=_("ZK Device Fetch Error: {0}").format(self.device_name),
+            )
+        else:
+            fetch_error = None
+        finally:
+            # Close ZK socket BEFORE touching the DB
+            if conn:
+                try:
+                    conn.enable_device()
+                    conn.disconnect()
+                except Exception:
+                    pass
+                conn = None
+
+        # ── Phase 2: DB I/O (ZK socket is already closed) ────────────────
+        # The DB connection may have been dropped while the ZK socket was
+        # open and streaming.  Reconnect before any DB operation.
+        _reconnect_db()
+
+        try:
+            if fetch_error:
+                self.last_connection_error = fetch_error
+                return
+
+            if not candidates:
                 self.last_connection_error = _(
                     "No new logs found after {0}"
                 ).format(start_datetime or "all time")
                 return
 
-            # ── Period filter + name generation ───────────────────────────
-            period = self.period or 0
-            last_log_users = {}
-            candidates = []  # (name, log)
-
-            for log in logs:
-                log.status = "IN" if log.status == 1 else "OUT"
-                name = "{}_{}_{}" .format(
-                    log.user_id,
-                    log.timestamp.strftime("%Y%m%d%H%M%S"),
-                    log.punch,
-                )
-                last_ts = last_log_users.get(log.user_id)
-                if period and last_ts:
-                    if (log.timestamp - last_ts).total_seconds() / 3600 < period:
-                        continue
-                last_log_users[log.user_id] = log.timestamp
-                candidates.append((name, log))
-
-            if not candidates:
-                return
-
-            # ── Batch deduplication (one query per 500 names) ─────────────
-            candidate_names = [n for n, _ in candidates]
+            # Batch deduplication (one query per 500 names)
+            candidate_names = [n for n, _, _ in candidates]
             existing_names = set()
             dedup_batch = 500
             for i in range(0, len(candidate_names), dedup_batch):
@@ -93,14 +150,14 @@ class ZKDevice(Document):
                 )
                 existing_names.update(row[0] for row in rows)
 
-            # ── Build list of truly new records ───────────────────────────
+            # Build the list of truly new records
             ts = now()
             owner = frappe.session.user
             new_records = []
             last = None
             total = len(candidates)
 
-            for idx, (name, log) in enumerate(candidates):
+            for idx, (name, enroll_no, log) in enumerate(candidates):
                 if show_progress:
                     frappe.publish_progress(
                         (idx + 1) * 100 / total,
@@ -110,7 +167,7 @@ class ZKDevice(Document):
                     continue
                 new_records.append((
                     name,
-                    log.user_id,
+                    enroll_no,
                     log.timestamp,
                     str(log.timestamp.date()),
                     log.status,
@@ -120,8 +177,7 @@ class ZKDevice(Document):
                 ))
                 last = log.timestamp
 
-            # ── Bulk INSERT (one round-trip per 100 rows) ─────────────────
-            inserted_count = 0
+            # Bulk INSERT — one round-trip per 100 rows
             if new_records:
                 inserted_count = len(new_records)
                 insert_batch = 100
@@ -131,58 +187,52 @@ class ZKDevice(Document):
                     "creation, modified, modified_by, owner, docstatus) "
                     "VALUES "
                 )
-                row_placeholder = "(%s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0)"
+                row_ph = "(%s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0)"
                 for i in range(0, inserted_count, insert_batch):
                     batch = new_records[i : i + insert_batch]
-                    flat_values = [v for row in batch for v in row]
                     frappe.db.sql(
-                        col + ", ".join([row_placeholder] * len(batch)),
-                        flat_values,
+                        col + ", ".join([row_ph] * len(batch)),
+                        [v for row in batch for v in row],
                     )
                 frappe.db.commit()
 
-            # Advance cursor
+            # Advance the fetch cursor
             if last:
-                self.last_log_row = last if last <= current_datetime else current_datetime
+                self.last_log_row = (
+                    last if last <= current_datetime else current_datetime
+                )
             self.fetch_from_date = None
             self.last_connection_error = _(
                 "Executed {0}: {1} on device / {2} after date filter / {3} inserted"
-            ).format(now(), total_logs_before_filter, total_logs_after_filter, inserted_count)
-
-            # Sync employee mapping only when new rows were added
-            if inserted_count:
-                try:
-                    self.sync_employee()
-                except Exception as e:
-                    frappe.log_error(message=str(e), title="ZK Sync Employee Error")
+            ).format(
+                now(),
+                total_logs_before_filter,
+                total_logs_after_filter,
+                inserted_count,
+            )
 
         except Exception as e:
             frappe.log_error(
                 message=str(e),
-                title=_("ZK Device Error: {0}").format(self.device_name),
+                title=_("ZK Device DB Error: {0}").format(self.device_name),
             )
             self.last_connection_error = str(e)
 
         finally:
+            _reconnect_db()
             self.last_connection_time = datetime.now()
             self.save()
-            if conn:
-                try:
-                    conn.enable_device()
-                    conn.disconnect()
-                except Exception:
-                    pass
 
     def sync_employee(self):
+        """Update device logs from the last 90 days that are missing an employee link."""
         frappe.db.sql(
             """
             UPDATE `tabDevice Log` log
-            SET log.employee = (
-                SELECT name FROM tabEmployee
-                WHERE attendance_device_id = log.enroll_no
-                LIMIT 1
-            )
-            WHERE log.employee IS NULL OR log.employee = ''
+            INNER JOIN tabEmployee emp
+                ON emp.attendance_device_id = TRIM(log.enroll_no)
+            SET log.employee = emp.name
+            WHERE (log.employee IS NULL OR log.employee = '')
+              AND log.date >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)
             """
         )
         frappe.db.commit()
@@ -190,16 +240,19 @@ class ZKDevice(Document):
 
 @frappe.whitelist()
 def sync_employee():
+    """
+    Global sync: update ALL device logs (last 90 days) missing an employee link.
+    Uses INNER JOIN for speed — far faster than a correlated subquery.
+    """
     try:
         frappe.db.sql(
             """
             UPDATE `tabDevice Log` log
-            SET log.employee = (
-                SELECT name FROM tabEmployee
-                WHERE attendance_device_id = log.enroll_no
-                LIMIT 1
-            )
-            WHERE log.employee IS NULL OR log.employee = ''
+            INNER JOIN tabEmployee emp
+                ON emp.attendance_device_id = TRIM(log.enroll_no)
+            SET log.employee = emp.name
+            WHERE (log.employee IS NULL OR log.employee = '')
+              AND log.date >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)
             """
         )
         frappe.db.commit()
@@ -243,13 +296,31 @@ def send_specific_device_log(device_name):
 
 @frappe.whitelist()
 def device_log_background_job(device):
-    """Background worker: fetch → sync → create checkins → notify frontend."""
-    doc = frappe.get_doc("ZK Device", device)
+    """
+    Background worker pipeline:
+      1. Fetch logs from ZK device → insert Device Logs
+      2. Sync employee links (always — not just for new records)
+      3. Create Employee Checkin records
+      4. Notify the frontend user via realtime
+    """
     current_user = frappe.session.user
+    doc = frappe.get_doc("ZK Device", device)
     try:
+        # Step 1 — fetch & insert (handles its own DB reconnect internally)
         doc.get_device_log(show_progress=True)
+
+        # Step 2 — sync employees unconditionally so old unlinked records are
+        #           fixed even when no new logs were fetched this run
+        try:
+            doc.sync_employee()
+        except Exception as e:
+            frappe.log_error(message=str(e), title="ZK Sync Employee Error")
+
+        # Step 3 — create checkins for all linked device logs
         from frappe_zk_integration_app.tasks import create_employee_checkin_internal
         create_employee_checkin_internal()
+
+        # Step 4 — notify frontend
         frappe.publish_realtime(
             "zk_job_done",
             {

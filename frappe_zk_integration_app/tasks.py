@@ -20,11 +20,11 @@ def update_employee_name_from_checkin():
 
 def create_employee_checkin_internal():
     """
-    Insert Employee Checkin rows for every Device Log that has an employee
-    linked but has not yet been turned into a checkin record.
+    Insert Employee Checkin rows for Device Logs from the last 90 days that
+    have an employee linked but no corresponding checkin record yet.
 
-    Uses LEFT JOIN anti-pattern which is faster than NOT IN (subquery)
-    on large tables.
+    - LEFT JOIN anti-join is faster than NOT IN (subquery) on large tables.
+    - Date filter (90 days) avoids a full-table scan on tabDevice Log.
 
     Called at the end of each device background job (after sync_employee).
     Also used by the API-callable create_employee_checkin() in device_log.py.
@@ -41,6 +41,7 @@ def create_employee_checkin_internal():
         LEFT JOIN `tabEmployee Checkin` ec ON ec.device_log = dl.name
         WHERE dl.employee IS NOT NULL
           AND ec.device_log IS NULL
+          AND dl.date >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)
         """
     )
     frappe.db.commit()
