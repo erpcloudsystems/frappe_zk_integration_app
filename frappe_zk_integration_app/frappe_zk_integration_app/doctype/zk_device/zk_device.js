@@ -37,6 +37,7 @@ frappe.ui.form.on("ZK Device", {
         let cleanup = function () {
             frappe.realtime.off("zk_job_done", handlers.done);
             frappe.realtime.off("zk_job_error", handlers.error);
+            clearTimeout(frm._zk_timeout);
             frappe.hide_progress();
             frm._zk_cleanup = null;
         };
@@ -64,6 +65,21 @@ frappe.ui.form.on("ZK Device", {
         frm._zk_cleanup = cleanup;
         frappe.realtime.on("zk_job_done", handlers.done);
         frappe.realtime.on("zk_job_error", handlers.error);
+
+        // Safety net: the background job has a 5-minute hard timeout on the
+        // server, but if it (or the notification itself) ever fails silently
+        // — worker crash, dropped Redis message, stuck RQ job — the realtime
+        // events above may never arrive. Without this, the progress dialog
+        // would stay open forever with no feedback to the user.
+        frm._zk_timeout = setTimeout(function () {
+            cleanup();
+            frappe.msgprint({
+                title: __("Device Error"),
+                message: __("No response from the background job after 6 minutes. Check the Error Log for details."),
+                indicator: "red"
+            });
+            frm.reload_doc();
+        }, 6 * 60 * 1000);
 
         // Show progress bar immediately.
         // Frappe's built-in realtime listener automatically keeps it updated

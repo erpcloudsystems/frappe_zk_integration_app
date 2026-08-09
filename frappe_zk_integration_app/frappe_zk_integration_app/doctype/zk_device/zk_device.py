@@ -104,10 +104,18 @@ class ZKDevice(Document):
             total_logs_after_filter = 0
             candidates = []
             fetch_error = str(fetch_exc)
-            frappe.log_error(
-                message=fetch_error,
-                title=_("ZK Device Fetch Error: {0}").format(self.device_name),
-            )
+            # The ZK call may have blocked long enough for MySQL's
+            # wait_timeout to drop the idle connection — reconnect before
+            # log_error touches the DB, or it raises a fresh, unrelated
+            # OperationalError that masks this one and escapes uncaught.
+            _reconnect_db()
+            try:
+                frappe.log_error(
+                    message=fetch_error,
+                    title=_("ZK Device Fetch Error: {0}").format(self.device_name),
+                )
+            except Exception:
+                pass
         else:
             fetch_error = None
         finally:
@@ -212,10 +220,14 @@ class ZKDevice(Document):
             )
 
         except Exception as e:
-            frappe.log_error(
-                message=str(e),
-                title=_("ZK Device DB Error: {0}").format(self.device_name),
-            )
+            _reconnect_db()
+            try:
+                frappe.log_error(
+                    message=str(e),
+                    title=_("ZK Device DB Error: {0}").format(self.device_name),
+                )
+            except Exception:
+                pass
             self.last_connection_error = str(e)
 
         finally:
@@ -331,13 +343,22 @@ def device_log_background_job(device):
             user=current_user,
         )
     except Exception as e:
-        frappe.log_error(
-            message=str(e),
-            title=_("ZK Background Job Error: {0}").format(device),
-        )
+        error_message = str(e)
+        # Same reasoning as in get_device_log: the DB connection may have
+        # been dropped during the blocking ZK I/O, so reconnect before
+        # log_error touches it — and never let log_error's own failure
+        # prevent the frontend from being notified.
+        _reconnect_db()
+        try:
+            frappe.log_error(
+                message=error_message,
+                title=_("ZK Background Job Error: {0}").format(device),
+            )
+        except Exception:
+            pass
         frappe.publish_realtime(
             "zk_job_error",
-            {"device": device, "error": str(e)},
+            {"device": device, "error": error_message},
             user=current_user,
         )
 
