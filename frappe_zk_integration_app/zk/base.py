@@ -1618,36 +1618,38 @@ class ZK(object):
         if self.verbose: print ("record_size is ", record_size)
         attendance_data = attendance_data[4:]
         if record_size == 8:
+            # O(1) lookup instead of scanning the full user list per record —
+            # with thousands of attendance records this was O(records*users)
+            # and could turn a fetch into a multi-minute (or job-timeout) op.
+            users_by_uid = {u.uid: u for u in users}
             while len(attendance_data) >= 8:
                 uid, status, timestamp, punch = unpack('HB4sB', attendance_data.ljust(8, b'\x00')[:8])
                 if self.verbose: print (codecs.encode(attendance_data[:8], 'hex'))
                 attendance_data = attendance_data[8:]
-                tuser = list(filter(lambda x: x.uid == uid, users))
-                if not tuser:
-                    user_id = str(uid)
-                else:
-                    user_id = tuser[0].user_id
+                tuser = users_by_uid.get(uid)
+                user_id = tuser.user_id if tuser else str(uid)
                 timestamp = self.__decode_time(timestamp)
                 attendance = Attendance(user_id, timestamp, status, punch, uid)
                 attendances.append(attendance)
         elif record_size == 16:
+            users_by_user_id = {u.user_id: u for u in users}
+            users_by_uid = {u.uid: u for u in users}
             while len(attendance_data) >= 16:
                 user_id, timestamp, status, punch, reserved, workcode = unpack('<I4sBB2sI', attendance_data.ljust(16, b'\x00')[:16])
                 user_id = str(user_id)
                 if self.verbose: print(codecs.encode(attendance_data[:16], 'hex'))
                 attendance_data = attendance_data[16:]
-                tuser = list(filter(lambda x: x.user_id == user_id, users))
-                if not tuser:
-                    if self.verbose: print("no uid {}", user_id)
-                    uid = str(user_id)
-                    tuser = list(filter(lambda x: x.uid == user_id, users))
-                    if not tuser:
-                        uid = str(user_id)
-                    else:
-                        uid = tuser[0].uid
-                        user_id = tuser[0].user_id
+                tuser = users_by_user_id.get(user_id)
+                if tuser:
+                    uid = tuser.uid
                 else:
-                    uid = tuser[0].uid
+                    if self.verbose: print("no uid {}", user_id)
+                    tuser = users_by_uid.get(user_id)
+                    if tuser:
+                        uid = tuser.uid
+                        user_id = tuser.user_id
+                    else:
+                        uid = str(user_id)
                 timestamp = self.__decode_time(timestamp)
                 attendance = Attendance(user_id, timestamp, status, punch, uid)
                 attendances.append(attendance)

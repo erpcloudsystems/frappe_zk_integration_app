@@ -3,6 +3,7 @@
 
 from __future__ import unicode_literals
 import json
+import time
 from datetime import datetime
 import frappe
 from dateutil import parser
@@ -13,8 +14,20 @@ from frappe.utils import now
 
 DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
+# Transient network hiccups (a dropped packet, a momentarily busy device)
+# shouldn't fail an entire fetch — retry the connect a couple of times
+# before giving up.
+_CONNECT_ATTEMPTS = 3
+_CONNECT_RETRY_DELAY = 3  # seconds
+
 # Hard limit on how long a single device background job may run.
-_JOB_TIMEOUT = 300  # 5 minutes
+# Must comfortably exceed the time needed to fetch a large attendance
+# history, dedupe/insert it, sync employees, and create checkins — a full
+# historical fetch (see get_device_log's fetch_from_date handling) can take
+# well beyond a few minutes. Kept in line with the "long" queue's own
+# default RQ timeout (1500s) rather than the much shorter "short"/"default"
+# queues, since a lower value here silently overrides the queue's timeout.
+_JOB_TIMEOUT = 1800  # 30 minutes
 
 
 def _reconnect_db():
@@ -29,6 +42,21 @@ def _reconnect_db():
         frappe.db.sql("SELECT 1")
     except Exception:
         frappe.db.connect()
+
+
+def _connect_with_retry(zk):
+    """Retry the device connect a few times before giving up — a single
+    dropped packet or a device that's momentarily busy servicing another
+    client shouldn't fail the whole fetch."""
+    last_exc = None
+    for attempt in range(_CONNECT_ATTEMPTS):
+        try:
+            return zk.connect()
+        except Exception as exc:
+            last_exc = exc
+            if attempt < _CONNECT_ATTEMPTS - 1:
+                time.sleep(_CONNECT_RETRY_DELAY)
+    raise last_exc
 
 
 class ZKDevice(Document):
@@ -55,10 +83,10 @@ class ZKDevice(Document):
                 port=self.port,
                 password=self.password,
                 timeout=30,
-                force_udp=self.udp or True,
-                ommit_ping=self.ping or True,
+                force_udp=bool(self.udp),
+                ommit_ping=bool(self.ping),
             )
-            conn = zk.connect()
+            conn = _connect_with_retry(zk)
             all_logs = conn.get_attendance() or []
             total_logs_before_filter = len(all_logs)
 
@@ -165,12 +193,20 @@ class ZKDevice(Document):
             last = None
             total = len(candidates)
 
+            # Publish at most once per whole percent — with thousands of
+            # candidates, publishing on every single row floods the realtime
+            # channel and adds a network round-trip per row for no visible
+            # benefit to the progress bar.
+            last_reported_pct = -1
             for idx, (name, enroll_no, log) in enumerate(candidates):
                 if show_progress:
-                    frappe.publish_progress(
-                        (idx + 1) * 100 / total,
-                        title=_("Fetching Logs for {0}...").format(self.device_name),
-                    )
+                    pct = (idx + 1) * 100 // total
+                    if pct != last_reported_pct:
+                        frappe.publish_progress(
+                            pct,
+                            title=_("Fetching Logs for {0}...").format(self.device_name),
+                        )
+                        last_reported_pct = pct
                 if name in existing_names:
                     continue
                 new_records.append((
@@ -185,10 +221,10 @@ class ZKDevice(Document):
                 ))
                 last = log.timestamp
 
-            # Bulk INSERT — one round-trip per 100 rows
+            # Bulk INSERT — one round-trip per 500 rows
             if new_records:
                 inserted_count = len(new_records)
-                insert_batch = 100
+                insert_batch = 500
                 col = (
                     "INSERT IGNORE INTO `tabDevice Log` "
                     "(name, employee, enroll_no, time, `date`, type, punch, device, "
@@ -326,11 +362,25 @@ def device_log_background_job(device):
         try:
             doc.sync_employee()
         except Exception as e:
-            frappe.log_error(message=str(e), title="ZK Sync Employee Error")
+            _reconnect_db()
+            try:
+                frappe.log_error(message=str(e), title="ZK Sync Employee Error")
+            except Exception:
+                pass
 
-        # Step 3 — create checkins for all linked device logs
-        from frappe_zk_integration_app.tasks import create_employee_checkin_internal
-        create_employee_checkin_internal()
+        # Step 3 — create checkins for all linked device logs. Isolated like
+        # Step 2: this table is shared across every device's job, so a lock
+        # wait / deadlock here shouldn't turn an otherwise-successful fetch
+        # into a reported failure.
+        try:
+            from frappe_zk_integration_app.tasks import create_employee_checkin_internal
+            create_employee_checkin_internal()
+        except Exception as e:
+            _reconnect_db()
+            try:
+                frappe.log_error(message=str(e), title="ZK Create Checkin Error")
+            except Exception:
+                pass
 
         # Step 4 — notify frontend
         frappe.publish_realtime(
@@ -372,8 +422,8 @@ def check_connection(device_id, show_progress=False):
             port=doc.port,
             password=doc.password,
             timeout=20,
-            force_udp=doc.udp or True,
-            ommit_ping=doc.ping or True,
+            force_udp=bool(doc.udp),
+            ommit_ping=bool(doc.ping),
         )
         conn = zk.connect()
         if conn:
