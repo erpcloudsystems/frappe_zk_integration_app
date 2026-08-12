@@ -36,11 +36,19 @@ _DEVICE_SOCKET_TIMEOUT = 120  # seconds
 # queues, since a lower value here silently overrides the queue's timeout.
 _JOB_TIMEOUT = 1800  # 30 minutes
 
-# The all-devices job runs every active device's fetch sequentially inside
-# one RQ job (see get_active_device_logs), so its budget must cover the
-# whole fleet, not just one device. Generous on purpose since this now
-# runs once a day (see hooks.py) rather than every 5 minutes.
+# The all-devices job runs a batch's devices sequentially inside one RQ
+# job (see get_active_device_logs), so its budget must cover a whole
+# batch, not just one device. Generous on purpose since this now runs
+# once a day (see hooks.py) rather than every 5 minutes.
 _ALL_DEVICES_JOB_TIMEOUT = 6 * 3600  # 6 hours
+
+# Fixed number of background jobs used to fetch the whole device fleet —
+# a middle ground between one job per device (unbounded job count, what
+# this used to do) and one job for everything (unbounded time-to-finish
+# on a large fleet, no parallelism). Devices are spread across this many
+# batches regardless of fleet size; each batch runs as its own job and
+# batches can run in parallel across whatever workers are available.
+_DEVICE_BATCH_COUNT = 5
 
 
 def _reconnect_db():
@@ -430,16 +438,31 @@ def _run_device_fetch_and_sync(doc, current_user, create_checkins):
         )
 
 
+def _split_into_batches(items, batch_count):
+    """Spread items round-robin across up to `batch_count` groups (fewer
+    groups if there are fewer items than batches), so batch sizes stay
+    close to even regardless of fleet size."""
+    if not items:
+        return []
+    batch_count = min(batch_count, len(items))
+    batches = [[] for _ in range(batch_count)]
+    for i, item in enumerate(items):
+        batches[i % batch_count].append(item)
+    return batches
+
+
 @frappe.whitelist()
 def get_active_device_logs(names=None):
     """
-    Enqueue ONE background job that fetches every active device in
-    sequence, instead of one job per device. Devices share the Device Log
-    / Employee Checkin tables, so running several device pipelines
-    concurrently (one RQ job each) could lock-wait or deadlock against
-    each other — running them one after another in a single job removes
-    that entirely, and checkins are created once at the end instead of
-    once per device.
+    Enqueue up to _DEVICE_BATCH_COUNT background jobs, each fetching a
+    subset of the active devices in sequence — a fixed, small job count
+    regardless of fleet size (unlike one job per device), while still
+    letting batches run in parallel across whatever workers are free
+    (unlike a single job for the entire fleet).
+
+    Within a batch, a device that fails is logged and the batch simply
+    moves on to the next device (see device_logs_background_job_all) —
+    one bad device never stops the rest of the batch.
     """
     if names:
         names = json.loads(str(names))
@@ -454,14 +477,15 @@ def get_active_device_logs(names=None):
     if not devices:
         return
 
-    frappe.enqueue(
-        "frappe_zk_integration_app.frappe_zk_integration_app.doctype.zk_device.zk_device.device_logs_background_job_all",
-        devices=devices,
-        queue="long",
-        timeout=_ALL_DEVICES_JOB_TIMEOUT,
-        job_id="zk_device_log_all",
-        deduplicate=True,
-    )
+    for i, batch in enumerate(_split_into_batches(devices, _DEVICE_BATCH_COUNT)):
+        frappe.enqueue(
+            "frappe_zk_integration_app.frappe_zk_integration_app.doctype.zk_device.zk_device.device_logs_background_job_all",
+            devices=batch,
+            queue="long",
+            timeout=_ALL_DEVICES_JOB_TIMEOUT,
+            job_id="zk_device_log_batch_{}".format(i),
+            deduplicate=True,
+        )
 
 
 @frappe.whitelist()
