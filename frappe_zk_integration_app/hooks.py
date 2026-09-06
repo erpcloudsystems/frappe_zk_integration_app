@@ -118,7 +118,6 @@ scheduler_events = {
             "frappe_zk_integration_app.frappe_zk_integration_app.doctype.device_log.device_log.execute",
         ]
     },
-    "hourly": ["frappe_zk_integration_app.tasks.update_employee_name_from_checkin"],
 }
 
 # Testing
