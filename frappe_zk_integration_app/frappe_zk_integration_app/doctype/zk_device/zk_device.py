@@ -157,7 +157,9 @@ class ZKDevice(Document):
             candidates = []  # list of (name, log)
 
             for log in logs:
-                log.status = "IN" if log.status == 1 else "OUT"
+                # Ignore the device's own punch state (1/0) and derive IN/OUT
+                # from time of day instead: before noon is IN, noon or later is OUT.
+                log.status = "IN" if log.timestamp.hour < 12 else "OUT"
                 enroll_no = str(log.user_id).strip()
                 name = "{}_{}_{}".format(
                     enroll_no,
