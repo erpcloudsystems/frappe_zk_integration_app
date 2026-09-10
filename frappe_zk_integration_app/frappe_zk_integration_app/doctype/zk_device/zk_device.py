@@ -10,7 +10,7 @@ from dateutil import parser
 from frappe import _
 from frappe.model.document import Document
 from frappe_zk_integration_app.zk import ZK
-from frappe.utils import now
+from frappe.utils import cint, now
 
 DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -554,3 +554,186 @@ def check_connection(device_id, show_progress=False):
             return "Success"
     except Exception as e:
         return str(e)
+
+
+def _connect(doc, timeout=20):
+    """Open a ZK connection using a device doc's own settings."""
+    zk = ZK(
+        doc.ip,
+        port=doc.port,
+        password=doc.password,
+        timeout=timeout,
+        force_udp=bool(doc.udp),
+        ommit_ping=bool(doc.ping),
+    )
+    return zk.connect()
+
+
+def _count_unconverted(device_name):
+    """Device Logs that have an employee but never became an Employee Checkin.
+
+    After a successful fetch + sync + checkin pass this must be 0. Anything
+    left means a row was dropped somewhere in the pipeline, so wiping the
+    device would destroy the only other copy of that punch.
+    """
+    return frappe.db.sql(
+        """
+        SELECT COUNT(*)
+        FROM `tabDevice Log` dl
+        LEFT JOIN `tabEmployee Checkin` ec ON ec.device_log = dl.name
+        WHERE dl.device = %s
+          AND dl.employee IS NOT NULL AND dl.employee != ''
+          AND ec.device_log IS NULL
+        """,
+        (device_name,),
+    )[0][0]
+
+
+@frappe.whitelist()
+def get_device_storage(device_id):
+    """
+    Pre-flight for the "Clear Device Logs" button.
+
+    Deliberately cheap: read_sizes() is a single CMD_GET_FREE_SIZES command,
+    so this reports how many punches the device is holding WITHOUT pulling
+    the log itself (which is the expensive, minutes-long part).
+
+    Returns the numbers the confirm dialog needs to tell the user exactly
+    what is about to be destroyed, or {"error": ...} if the device is
+    unreachable.
+    """
+    doc = frappe.get_doc("ZK Device", device_id)
+    conn = None
+    try:
+        conn = _connect(doc)
+        conn.read_sizes()
+        records = conn.records
+        rec_cap = conn.rec_cap
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if conn:
+            try:
+                conn.disconnect()
+            except Exception:
+                pass
+
+    return {
+        "records": records,
+        "rec_cap": rec_cap,
+        "db_logs": frappe.db.count("Device Log", {"device": doc.device_name}),
+        "unmapped": frappe.db.sql(
+            """
+            SELECT COUNT(*) FROM `tabDevice Log`
+            WHERE device = %s AND (employee IS NULL OR employee = '')
+            """,
+            (doc.device_name,),
+        )[0][0],
+        "unconverted": _count_unconverted(doc.device_name),
+        "period": doc.period or 0,
+        "last_log_row": str(doc.last_log_row or ""),
+    }
+
+
+@frappe.whitelist()
+def clear_device_attendance(device_name, force=0):
+    """
+    Enqueue the guarded wipe of a device's on-board attendance log.
+
+    Runs in the background because step 1 is a full fetch, which is the same
+    minutes-long operation as a normal pull (see _JOB_TIMEOUT).
+    """
+    frappe.only_for("System Manager")
+    frappe.enqueue(
+        "frappe_zk_integration_app.frappe_zk_integration_app.doctype.zk_device.zk_device.clear_device_attendance_job",
+        device=device_name,
+        force=cint(force),
+        user=frappe.session.user,
+        queue="long",
+        timeout=_JOB_TIMEOUT,
+        job_id="zk_clear_attendance_{}".format(device_name),
+        deduplicate=True,
+    )
+
+
+def clear_device_attendance_job(device, force=0, user=None):
+    """
+    Wipe the device's stored attendance log — irreversible on the hardware.
+
+    Order matters: everything the device holds is pulled into Device Log and
+    turned into Employee Checkin BEFORE anything is erased, and the wipe is
+    skipped entirely if that pipeline did not come out clean.
+
+    Note this sends CMD_CLEAR_ATTLOG (attendance only) via clear_attendance().
+    It must never use clear_data(), which also erases users and fingerprint
+    templates and would mean re-enrolling every employee on the device.
+    """
+    user = user or frappe.session.user
+    doc = frappe.get_doc("ZK Device", device)
+
+    def fail(msg):
+        _reconnect_db()
+        frappe.publish_realtime("zk_clear_error", {"device": device, "error": msg}, user=user)
+
+    # ── Step 1: final fetch, so the DB holds everything the device holds ──
+    doc.get_device_log(show_progress=True)
+    if doc.flags.zk_fetch_failed:
+        return fail(
+            _("Aborted — the final fetch failed, so the device log was NOT cleared: {0}")
+            .format(doc.last_connection_error)
+        )
+
+    # ── Step 2: link employees and materialise checkins ──────────────────
+    try:
+        doc.sync_employee()
+    except Exception as e:
+        return fail(_("Aborted — employee sync failed, nothing was cleared: {0}").format(e))
+    _create_checkins_safely()
+
+    # ── Step 3: refuse to wipe while any punch is only half-processed ────
+    _reconnect_db()
+    unconverted = _count_unconverted(doc.device_name)
+    if unconverted and not cint(force):
+        return fail(
+            _("Aborted — {0} device log(s) have an employee but no Employee Checkin. "
+              "Nothing was cleared. Resolve these first, or re-run with Force.")
+            .format(unconverted)
+        )
+
+    # ── Step 4: the irreversible part ────────────────────────────────────
+    conn = None
+    try:
+        conn = _connect(doc, timeout=_DEVICE_SOCKET_TIMEOUT)
+        conn.read_sizes()
+        cleared = conn.records
+        conn.clear_attendance()
+    except Exception as e:
+        _reconnect_db()
+        try:
+            frappe.log_error(
+                message=str(e), title=_("ZK Clear Attendance Error: {0}").format(device)
+            )
+        except Exception:
+            pass
+        return fail(str(e))
+    finally:
+        if conn:
+            try:
+                conn.enable_device()
+                conn.disconnect()
+            except Exception:
+                pass
+
+    # ── Step 5: audit trail ──────────────────────────────────────────────
+    _reconnect_db()
+    message = _("Cleared {0} attendance record(s) from the device at {1}. "
+                "{2} Device Log row(s) are retained in the database.").format(
+        cleared, now(), frappe.db.count("Device Log", {"device": doc.device_name})
+    )
+    try:
+        doc.add_comment("Info", message)
+        frappe.db.commit()
+    except Exception:
+        pass
+
+    frappe.publish_realtime("zk_clear_done", {"device": device, "message": message}, user=user)
