@@ -10,20 +10,24 @@
   "connection_details",
   "ip",
   "password",
-  "period",
-  "active",
-  "ping",
   "column_break_5",
   "port",
   "auto_attendance",
-  "get_after_mins",
-  "excecution_time",
-  "udp",
   "last_connection_details_section",
   "last_log_row",
   "fetch_from_date",
   "last_connection_time",
-  "last_connection_error"
+  "last_connection_error",
+  "period",
+  "get_after_mins",
+  "excecution_time",
+  "ping",
+  "udp",
+  "active",
+  "adms_section",
+  "serial_number",
+  "push_stamp",
+  "last_push_time"
  ],
  "fields": [
   {
@@ -140,11 +144,38 @@
    "fieldname": "active",
    "fieldtype": "Check",
    "label": "Active"
+  },
+  {
+   "fieldname": "adms_section",
+   "fieldtype": "Section Break",
+   "label": "ADMS / Push"
+  },
+  {
+   "fieldname": "serial_number",
+   "fieldtype": "Data",
+   "label": "Serial Number",
+   "description": "Device serial number (SN). ADMS pushes identify themselves by SN, not IP \u2014 set this to receive real-time punches from a device that was created by hand.",
+   "unique": 1
+  },
+  {
+   "fieldname": "push_stamp",
+   "fieldtype": "Data",
+   "label": "Push Stamp",
+   "description": "Last Stamp reported by the device. Echoed back on handshake so the device knows what it has already uploaded.",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "last_push_time",
+   "fieldtype": "Datetime",
+   "label": "Last Push Time",
+   "read_only": 1,
+   "no_copy": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-11-14 16:26:55.660056",
+ "modified": "2026-09-10 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe ZK Integration App",
  "name": "ZK Device",

@@ -105,6 +105,15 @@ app_license = "MIT"
 # 	}
 # }
 
+# Website
+# -------
+
+# Devices using the ADMS / push protocol request fixed paths (/iclock/cdata,
+# /iclock/getrequest, ...) which Frappe's website router does not map to
+# methods. A page renderer claims exactly those paths; everything else falls
+# through to Frappe's own renderers untouched.
+page_renderer = ["frappe_zk_integration_app.adms.IClockRenderer"]
+
 # Scheduled Tasks
 # ---------------
 
