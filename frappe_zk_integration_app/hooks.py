@@ -110,11 +110,14 @@ app_license = "MIT"
 
 scheduler_events = {
     "cron": {
-        # Pull attendance from all active ZK devices once a day at midnight.
-        # All devices are fetched sequentially inside a single background
-        # job (see get_active_device_logs / device_logs_background_job_all),
-        # so the scheduler itself still returns almost instantly.
-        "0 0 * * *": [
+        # Pull attendance from all active ZK devices every 5 minutes.
+        # Devices are spread across a fixed number of background jobs and
+        # fetched sequentially within each one (see get_active_device_logs /
+        # device_logs_background_job_all), so the scheduler itself still
+        # returns almost instantly. Those jobs are enqueued with
+        # deduplicate=True under stable job ids, so a tick that fires while
+        # the previous run is still working adds nothing instead of piling up.
+        "*/5 * * * *": [
             "frappe_zk_integration_app.frappe_zk_integration_app.doctype.device_log.device_log.execute",
         ]
     },
