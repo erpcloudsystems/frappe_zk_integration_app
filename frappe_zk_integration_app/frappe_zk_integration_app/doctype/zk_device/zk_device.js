@@ -31,27 +31,60 @@ frappe.ui.form.on("ZK Device", {
             return;
         }
 
-        // Cheap pre-flight (one CMD_GET_FREE_SIZES command) so the user sees
-        // how much the device is holding before committing to a pull that
-        // transfers the whole log and can run for many minutes.
-        frappe.call({
-            method: "frappe_zk_integration_app.frappe_zk_integration_app.doctype.zk_device.zk_device.get_device_storage",
-            args: { device_id: frm.doc.name },
-            freeze: true,
-            freeze_message: __("Checking device..."),
-            callback: function (r) {
-                let d = r.message || {};
-                if (d.error) {
-                    frappe.msgprint({
-                        title: __("Device Unreachable"),
-                        message: __("Could not read the device, so nothing was fetched.") + "<br><pre>" +
-                                 frappe.utils.escape_html(d.error) + "</pre>",
-                        indicator: "red"
-                    });
-                    return;
-                }
-                frm.events.confirm_get_device_logs(frm, d);
+        // Pre-flight so the user sees how much the device is holding before
+        // committing to a pull that transfers the whole log. It runs as a
+        // background job rather than in this request: answering needs a full
+        // ZK handshake, which on a slow device outlasts nginx's
+        // proxy_read_timeout and would return a gateway timeout instead of a
+        // number. Nothing here blocks — the answer arrives over realtime.
+        if (frm._zk_probe_cleanup) {
+            frm._zk_probe_cleanup();
+        }
+
+        let cleanup = function () {
+            frappe.realtime.off("zk_storage_info", handler);
+            clearTimeout(frm._zk_probe_timeout);
+            frm._zk_probe_cleanup = null;
+        };
+
+        let handler = function (d) {
+            if (d.device !== frm.doc.name) return;
+            cleanup();
+            if (d.error) {
+                frappe.msgprint({
+                    title: __("Device Unreachable"),
+                    message: __("Could not read the device, so nothing was fetched.") + "<br><pre>" +
+                             frappe.utils.escape_html(d.error) + "</pre>",
+                    indicator: "red"
+                });
+                return;
             }
+            frm.events.confirm_get_device_logs(frm, d);
+        };
+
+        frm._zk_probe_cleanup = cleanup;
+        frappe.realtime.on("zk_storage_info", handler);
+
+        // If the probe never reports back (no worker, dropped realtime
+        // message, device wedged mid-handshake), don't leave the user with
+        // nothing — offer the pull without the record count.
+        frm._zk_probe_timeout = setTimeout(function () {
+            cleanup();
+            frappe.confirm(
+                "<p>" + __("The device did not report its record count in time.") + "</p>" +
+                "<p>" + __("Fetch anyway, without knowing how many records are stored?") + "</p>",
+                function () {
+                    frm.events.run_get_device_logs(frm);
+                }
+            );
+        }, 90 * 1000);
+
+        frappe.show_alert({ message: __("Checking device..."), indicator: "blue" }, 5);
+
+        frappe.call({
+            method: "frappe_zk_integration_app.frappe_zk_integration_app.doctype.zk_device.zk_device.request_device_storage",
+            args: { device_name: frm.doc.name },
+            error: function () { cleanup(); }
         });
     },
 

@@ -27,6 +27,12 @@ _CONNECT_RETRY_DELAY = 3  # seconds
 # to the very first data request, so this needs real headroom.
 _DEVICE_SOCKET_TIMEOUT = 120  # seconds
 
+# Socket timeout for the cheap "how many records are on the device" probe
+# behind the Get Logs / Clear Device Logs confirm dialogs. Small because the
+# probe is a single command and the user is waiting on the answer; a device
+# that cannot answer this quickly is better reported as unreachable.
+_PREFLIGHT_TIMEOUT = 10  # seconds
+
 # Hard limit on how long a single device background job may run.
 # Must comfortably exceed the time needed to fetch a large attendance
 # history, dedupe/insert it, sync employees, and create checkins — a full
@@ -605,7 +611,10 @@ def get_device_storage(device_id):
     doc = frappe.get_doc("ZK Device", device_id)
     conn = None
     try:
-        conn = _connect(doc)
+        # Short timeout on purpose: this only has to answer "how much is on
+        # the device", so an unresponsive device should fail fast rather than
+        # sit through the full per-read budget several times over.
+        conn = _connect(doc, timeout=_PREFLIGHT_TIMEOUT)
         conn.read_sizes()
         records = conn.records
         rec_cap = conn.rec_cap
@@ -737,3 +746,38 @@ def clear_device_attendance_job(device, force=0, user=None):
         pass
 
     frappe.publish_realtime("zk_clear_done", {"device": device, "message": message}, user=user)
+
+
+@frappe.whitelist()
+def request_device_storage(device_name):
+    """
+    Enqueue the storage probe instead of running it inside the web request.
+
+    get_device_storage() has to complete a ZK handshake before it can answer,
+    and that handshake is worth tens of seconds on a slow or unreachable
+    device (ping subprocess, then test_tcp's own 10s, then the session and
+    auth commands). Doing that synchronously blocks a gunicorn worker and
+    trips nginx's proxy_read_timeout, so the caller gets a gateway timeout
+    instead of an answer. Queue it and deliver the result over realtime.
+    """
+    frappe.enqueue(
+        "frappe_zk_integration_app.frappe_zk_integration_app.doctype.zk_device.zk_device.device_storage_job",
+        device=device_name,
+        user=frappe.session.user,
+        queue="short",
+        timeout=180,
+        job_id="zk_device_storage_{}".format(device_name),
+        deduplicate=True,
+    )
+
+
+def device_storage_job(device, user=None):
+    """Probe the device and push the numbers to the waiting browser."""
+    user = user or frappe.session.user
+    try:
+        result = get_device_storage(device)
+    except Exception as e:
+        _reconnect_db()
+        result = {"error": str(e)}
+    result["device"] = device
+    frappe.publish_realtime("zk_storage_info", result, user=user)
