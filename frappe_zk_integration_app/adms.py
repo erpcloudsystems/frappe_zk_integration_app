@@ -31,14 +31,22 @@ from frappe.utils import cint, get_datetime, now
 from frappe.website.page_renderers.base_renderer import BaseRenderer
 from werkzeug.wrappers import Response
 
-# Paths the firmware talks to. Anything else falls through to Frappe's own
-# renderers so this hook cannot shadow the rest of the site.
+# Paths the firmware talks to.
 ICLOCK_PATHS = (
     "iclock/cdata",
     "iclock/getrequest",
     "iclock/devicecmd",
     "iclock/ping",
 )
+
+# Everything under this prefix is claimed, not just the paths above. Firmware
+# families vary in what they request (casing, an .aspx suffix, endpoints not
+# listed here), and a 404 makes a device give up silently — with the evidence
+# only in nginx's access log, which the frappe user usually cannot read. A
+# claimed-but-unrecognised path is answered OK and written to the Error Log
+# instead, so the mismatch is visible from inside Frappe. Nothing outside the
+# prefix is touched, so the rest of the site is unaffected.
+ICLOCK_PREFIX = "iclock/"
 
 # ATTLOG columns, tab separated:
 #   PIN  DateTime  Status  Verify  WorkCode  Reserved...
@@ -63,24 +71,61 @@ def _log(title, message):
 class IClockRenderer(BaseRenderer):
     """Page renderer that serves the ADMS endpoints."""
 
+    @property
+    def endpoint(self):
+        """Path normalised for matching: lower-cased, without an .aspx tail."""
+        path = self.path.lower()
+        for suffix in (".aspx", ".asp", ".php"):
+            if path.endswith(suffix):
+                return path[: -len(suffix)]
+        return path
+
     def can_render(self):
-        return self.path in ICLOCK_PATHS
+        return self.endpoint == "iclock" or self.endpoint.startswith(ICLOCK_PREFIX)
 
     def render(self):
         sn = (frappe.form_dict.get("SN") or "").strip()
+        endpoint = self.endpoint
         try:
-            if self.path == "iclock/cdata":
+            if endpoint == "iclock/cdata":
                 return handle_cdata(sn)
-            if self.path == "iclock/getrequest":
+            if endpoint == "iclock/getrequest":
                 return handle_getrequest(sn)
-            # devicecmd (command results) and ping need an acknowledgement and
-            # nothing more — replying anything else makes the device retry.
+            if endpoint in ICLOCK_PATHS:
+                # devicecmd (command results) and ping need an acknowledgement
+                # and nothing more — replying anything else makes the device
+                # retry.
+                return _text("OK")
+            log_unhandled_path(self.path, sn)
             return _text("OK")
         except Exception as e:
             _log(_title("ZK ADMS Error", sn), frappe.get_traceback() or str(e))
             # Deliberately 200 with an error body: a 5xx makes some firmware
             # drop the punch it was holding instead of retrying it.
             return _text("OK")
+
+
+def log_unhandled_path(path, sn):
+    """
+    Record a claimed path this module does not implement.
+
+    This is the breadcrumb for "the device is clearly talking to us but
+    nothing is being stored": the Error Log will name the exact path, method
+    and payload the firmware used, which is what tells us what to add.
+    """
+    try:
+        body = frappe.request.get_data(as_text=True) or ""
+    except Exception:
+        body = "<unreadable>"
+    _log(
+        _title("ZK ADMS Unhandled Path", sn),
+        "path: /{0}\nmethod: {1}\nquery: {2}\nbody (first 2000 chars):\n{3}".format(
+            path,
+            getattr(frappe.request, "method", "?"),
+            dict(frappe.form_dict or {}),
+            body[:2000],
+        ),
+    )
 
 
 def _title(prefix, sn):
@@ -285,7 +330,6 @@ def create_device_logs(device, punches):
     ts = now()
     owner = "Administrator"
     rows = []
-    names = []
     for enroll_no, timestamp, punch in punches:
         if (enroll_no, timestamp) in existing:
             continue
@@ -293,7 +337,6 @@ def create_device_logs(device, punches):
         # from the state the device reported.
         log_type = "IN" if timestamp.hour < 12 else "OUT"
         name = "{0}_{1}_{2}".format(enroll_no, timestamp.strftime("%Y%m%d%H%M%S"), punch)
-        names.append(name)
         rows.append(
             (
                 name, enroll_no, timestamp, str(timestamp.date()), log_type,
@@ -302,49 +345,66 @@ def create_device_logs(device, punches):
         )
         existing.add((enroll_no, timestamp))
 
-    if not rows:
-        return
+    if rows:
+        frappe.db.sql(
+            "INSERT IGNORE INTO `tabDevice Log` "
+            "(name, employee, enroll_no, time, `date`, type, punch, device, "
+            "creation, modified, modified_by, owner, docstatus) VALUES "
+            + ", ".join(["(%s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0)"] * len(rows)),
+            [v for row in rows for v in row],
+        )
 
-    frappe.db.sql(
-        "INSERT IGNORE INTO `tabDevice Log` "
-        "(name, employee, enroll_no, time, `date`, type, punch, device, "
-        "creation, modified, modified_by, owner, docstatus) VALUES "
-        + ", ".join(["(%s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0)"] * len(rows)),
-        [v for row in rows for v in row],
-    )
-
-    link_employees(names)
-    create_checkins(names)
+    # Reconcile every punch in this upload, not just the rows just inserted.
+    # A punch that arrived before its Employee had an Attendance Device ID
+    # lands unlinked, and the device re-sending it would otherwise hit the
+    # dedup check and return without ever retrying the link — leaving that
+    # row without attendance permanently, since the push path has no
+    # equivalent of the polling path's global sync_employee().
+    link_employees(device_name, times)
+    create_checkins(device_name, times)
     frappe.db.commit()
 
 
-def link_employees(names):
-    """Point the new rows at their Employee via Attendance Device ID."""
+def link_employees(device_name, times):
+    """
+    Point this upload's rows at their Employee via Attendance Device ID.
+
+    Addressed by (device, time) rather than by row name so it also repairs
+    rows the scheduled puller stored, which name the same punch differently.
+    TRIM is applied to both sides — an Attendance Device ID saved with a
+    stray space would otherwise silently never match.
+    """
     frappe.db.sql(
         """
         UPDATE `tabDevice Log` log
-        INNER JOIN tabEmployee emp ON emp.attendance_device_id = TRIM(log.enroll_no)
+        INNER JOIN tabEmployee emp
+            ON TRIM(emp.attendance_device_id) = TRIM(log.enroll_no)
         SET log.employee = emp.name
-        WHERE log.name IN ({0})
+        WHERE log.device = %s
+          AND log.time IN ({0})
           AND (log.employee IS NULL OR log.employee = '')
-        """.format(", ".join(["%s"] * len(names))),
-        names,
+        """.format(", ".join(["%s"] * len(times))),
+        [device_name] + times,
     )
 
 
-def create_checkins(names):
+def create_checkins(device_name, times):
     """
     Create Employee Checkin for the rows just inserted.
 
-    Scoped to these names on purpose. The scheduled pipeline's
+    Scoped to this upload's punches on purpose. The scheduled pipeline's
     create_employee_checkin_internal() scans a 90-day window, which is far
     too much work to repeat on every single pushed punch — and that window is
     also why a punch older than 90 days never becomes attendance. Addressing
-    rows directly sidesteps both.
+    them directly sidesteps both.
     """
+    # INSERT IGNORE, not a plain INSERT: the row name here is the Device Log
+    # name, and an Employee Checkin already carrying that name (created by the
+    # polling pipeline, or by hand) would raise a duplicate key and abort the
+    # whole upload — costing every punch in it, not just the clashing one.
     frappe.db.sql(
         """
-        INSERT INTO `tabEmployee Checkin`
+        INSERT IGNORE INTO `tabEmployee Checkin`
             (name, employee, employee_name, time, log_type, device_log, device_id,
              creation, modified, owner)
         SELECT
@@ -353,11 +413,12 @@ def create_checkins(names):
         FROM `tabDevice Log` dl
         INNER JOIN `tabEmployee` emp ON emp.name = dl.employee
         LEFT JOIN `tabEmployee Checkin` ec ON ec.device_log = dl.name
-        WHERE dl.name IN ({0})
+        WHERE dl.device = %s
+          AND dl.time IN ({0})
           AND dl.employee IS NOT NULL
           AND ec.device_log IS NULL
-        """.format(", ".join(["%s"] * len(names))),
-        names,
+        """.format(", ".join(["%s"] * len(times))),
+        [device_name] + times,
     )
 
 
