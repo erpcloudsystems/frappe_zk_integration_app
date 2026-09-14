@@ -11,6 +11,9 @@ def create_employee_checkin_internal():
 
     - LEFT JOIN anti-join is faster than NOT IN (subquery) on large tables.
     - Date filter (90 days) avoids a full-table scan on tabDevice Log.
+    - `device` (Link to ZK Device) is set from the same value as device_id:
+      Device Log.device already stores the ZK Device name, so the link
+      field and the plain data field agree by construction.
     - INNER JOIN to tabEmployee both fills employee_name at insert time
       (raw SQL bypasses the doctype's fetch_from) and guards against a
       dangling dl.employee that no longer matches a real Employee.
@@ -22,10 +25,10 @@ def create_employee_checkin_internal():
         """
         INSERT INTO `tabEmployee Checkin`
             (name, employee, employee_name, time, log_type, device_log, device_id,
-             creation, modified, owner)
+             device, creation, modified, owner)
         SELECT
             dl.name, dl.employee, emp.employee_name, dl.time, dl.type, dl.name, dl.device,
-            dl.creation, dl.modified, dl.owner
+            dl.device, dl.creation, dl.modified, dl.owner
         FROM `tabDevice Log` dl
         INNER JOIN `tabEmployee` emp ON emp.name = dl.employee
         LEFT JOIN `tabEmployee Checkin` ec ON ec.device_log = dl.name

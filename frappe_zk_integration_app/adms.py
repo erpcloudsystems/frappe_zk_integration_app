@@ -406,10 +406,10 @@ def create_checkins(device_name, times):
         """
         INSERT IGNORE INTO `tabEmployee Checkin`
             (name, employee, employee_name, time, log_type, device_log, device_id,
-             creation, modified, owner)
+             device, creation, modified, owner)
         SELECT
             dl.name, dl.employee, emp.employee_name, dl.time, dl.type, dl.name, dl.device,
-            dl.creation, dl.modified, dl.owner
+            dl.device, dl.creation, dl.modified, dl.owner
         FROM `tabDevice Log` dl
         INNER JOIN `tabEmployee` emp ON emp.name = dl.employee
         LEFT JOIN `tabEmployee Checkin` ec ON ec.device_log = dl.name
