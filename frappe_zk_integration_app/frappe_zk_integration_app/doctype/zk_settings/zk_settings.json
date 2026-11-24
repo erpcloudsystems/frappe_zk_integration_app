@@ -1,0 +1,57 @@
+{
+ "actions": [],
+ "creation": "2026-11-24 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "adms_section",
+  "adms_time_offset_hours"
+ ],
+ "fields": [
+  {
+   "fieldname": "adms_section",
+   "fieldtype": "Section Break",
+   "label": "ADMS / Push"
+  },
+  {
+   "default": "0",
+   "description": "Hours added to every punch time received from ADMS devices before it is saved. Use a negative number to subtract, and decimals for half hours (e.g. 2, 3, -1, 5.5). Applies only to new punches; logs already saved are not changed.",
+   "fieldname": "adms_time_offset_hours",
+   "fieldtype": "Float",
+   "label": "ADMS Time Offset (Hours)"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-11-24 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe ZK Integration App",
+ "name": "ZK Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

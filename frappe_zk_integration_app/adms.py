@@ -26,6 +26,8 @@ Responses are bare text/plain — the firmware parses them literally and will
 retry or go idle if it gets HTML or JSON.
 """
 
+from datetime import timedelta
+
 import frappe
 from frappe.utils import cint, get_datetime, now
 from frappe.website.page_renderers.base_renderer import BaseRenderer
@@ -204,7 +206,7 @@ def handle_attlog(sn, body):
         _log(_title("ZK ADMS Unregistered Device", sn), "Could not resolve or create a device for SN {0}".format(sn))
         return _text("OK")
 
-    punches = parse_attlog(body)
+    punches = apply_time_offset(parse_attlog(body))
     if punches:
         create_device_logs(device, punches)
 
@@ -242,6 +244,28 @@ def parse_attlog(body):
         punch = parts[2].strip() if len(parts) > 2 else ""
         punches.append((enroll_no, timestamp, punch))
     return punches
+
+
+def apply_time_offset(punches):
+    """
+    Shift every punch by ZK Settings > ADMS Time Offset (Hours).
+
+    Some firmware reports ATTLOG times in a different zone than the site
+    (typically UTC, after syncing its clock from the HTTP Date header). The
+    shift is applied here, before dedup, IN/OUT and the row name are derived,
+    so all of those use the corrected time. Dedup stays consistent as long as
+    the offset is not changed while the device is still re-sending the same
+    punches.
+    """
+    from frappe_zk_integration_app.frappe_zk_integration_app.doctype.zk_settings.zk_settings import (
+        get_adms_time_offset_hours,
+    )
+
+    hours = get_adms_time_offset_hours()
+    if not hours or not punches:
+        return punches
+    delta = timedelta(hours=hours)
+    return [(enroll_no, timestamp + delta, punch) for enroll_no, timestamp, punch in punches]
 
 
 def get_or_create_device(sn):
